@@ -1,5 +1,18 @@
 import { fail } from '@sveltejs/kit';
-import { YouTubeTranscriptApi, type FetchedTranscriptSnippet } from '$lib/youtube-transcript/src';
+import { env } from '$env/dynamic/private';
+import {
+	AgeRestricted,
+	FailedToCreateConsentCookie,
+	IpBlocked,
+	RequestBlocked,
+	TranscriptsDisabled,
+	VideoUnavailable,
+	VideoUnplayable,
+	YouTubeDataUnparsable,
+	YouTubeRequestFailed,
+	YouTubeTranscriptApi,
+	type FetchedTranscriptSnippet
+} from '$lib/youtube-transcript/src';
 import { decodeHtml } from '$lib/youtube-transcript/src/utils';
 import type { Actions } from './$types';
 
@@ -76,8 +89,29 @@ export const actions: Actions = {
 				videoId
 			};
 		} catch (error) {
-			const message =
-				error instanceof Error ? error.message : 'Unable to fetch the transcript right now.';
+			if (env.TRANSCRIPT_DEBUG === 'true') {
+				console.error('[transcript] fetch failed', error);
+			}
+
+			let message = 'Unable to fetch the transcript right now.';
+			if (error instanceof TranscriptsDisabled) {
+				message = 'Captions are disabled for this video.';
+			} else if (error instanceof AgeRestricted) {
+				message = 'This video is age-restricted and cannot be fetched by the server.';
+			} else if (error instanceof VideoUnavailable) {
+				message = 'This video is unavailable.';
+			} else if (error instanceof RequestBlocked || error instanceof IpBlocked) {
+				message =
+					'YouTube is blocking requests from this server (common on Netlify). Try again later or use a proxy.';
+			} else if (error instanceof FailedToCreateConsentCookie) {
+				message = 'YouTube consent checks blocked the transcript retrieval.';
+			} else if (error instanceof YouTubeRequestFailed || error instanceof YouTubeDataUnparsable) {
+				message = 'YouTube did not return transcript data in the expected format.';
+			} else if (error instanceof VideoUnplayable) {
+				message = error.message;
+			} else if (error instanceof Error) {
+				message = error.message;
+			}
 			return fail(500, { error: message });
 		}
 	}
