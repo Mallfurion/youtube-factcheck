@@ -1,5 +1,6 @@
 import { fail } from '@sveltejs/kit';
-import { YoutubeTranscript } from 'youtube-transcript';
+import { YouTubeTranscriptApi, type FetchedTranscriptSnippet } from '$lib/youtube-transcript/src';
+import { decodeHtml } from '$lib/youtube-transcript/src/utils';
 import type { Actions } from './$types';
 
 const YOUTUBE_HOSTS = new Set([
@@ -56,8 +57,12 @@ export const actions: Actions = {
 		}
 
 		try {
-			const transcriptItems = await YoutubeTranscript.fetchTranscript(videoId);
-			const transcript = transcriptItems.map((item) => item.text).join('\n');
+			const api = new YouTubeTranscriptApi();
+			const transcriptData = await api.fetch(videoId, { languages: ['en'] });
+			const transcript = transcriptData
+				.toRawData()
+				.map((item: FetchedTranscriptSnippet) => decodeHtml(item.text).replace(/\\n/g, ' '))
+				.join(' ');
 
 			if (!transcript) {
 				return fail(404, {

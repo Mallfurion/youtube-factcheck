@@ -1,28 +1,48 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import { marked } from 'marked';
+	import DOMPurify from 'isomorphic-dompurify';
+	import type { SubmitFunction } from '@sveltejs/kit';
 
-	const { data } = $props<{
-		data: {
-			form?: {
-				error?: string;
-				transcript?: string;
-				videoId?: string;
-			};
+	const { form } = $props<{
+		form?: {
+			error?: string;
+			transcript?: string;
+			videoId?: string;
 		};
 	}>();
 
 	let url = $state('');
 	let isLoading = $state(false);
 	let copyStatus = $state('');
+	let verifyLoading = $state(false);
+	let verifyError = $state('');
+	let verifyResult = $state('');
+	let dialogRef = $state<HTMLDialogElement | null>(null);
+	let dialogBodyRef = $state<HTMLDivElement | null>(null);
 
-	const transcript = $derived(data?.form?.transcript ?? '');
-	const error = $derived(data?.form?.error ?? '');
-	const words = $derived(
-		transcript ? transcript.trim().split(/\s+/).filter(Boolean).length : 0
+	const verifyHtml = $derived(
+		verifyResult ? DOMPurify.sanitize(marked.parse(verifyResult, { async: false }) as string) : ''
 	);
+
+	const renderMarkdown = (node: HTMLElement, html: string) => {
+		node.innerHTML = html;
+		return {
+			update(newHtml: string) {
+				node.innerHTML = newHtml;
+			},
+			destroy() {
+				node.innerHTML = '';
+			}
+		};
+	};
+
+	const transcript = $derived(form?.transcript ?? '');
+	const error = $derived(form?.error ?? '');
+	const words = $derived(transcript ? transcript.trim().split(/\s+/).filter(Boolean).length : 0);
 	const lines = $derived(transcript ? transcript.split('\n').length : 0);
 
-	const enhanceForm = enhance(() => {
+	const enhanceForm: SubmitFunction = () => {
 		isLoading = true;
 		copyStatus = '';
 
@@ -30,7 +50,7 @@
 			isLoading = false;
 			await update();
 		};
-	});
+	};
 
 	const handleCopy = async () => {
 		if (!transcript) return;
@@ -40,20 +60,99 @@
 			copyStatus = '';
 		}, 2000);
 	};
+
+	const handleVerify = async () => {
+		if (!transcript || verifyLoading) return;
+		verifyLoading = true;
+		verifyError = '';
+		verifyResult = '';
+		dialogRef?.showModal();
+
+		try {
+			const response = await fetch('/api/verify', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ transcript })
+			});
+
+			if (!response.ok) {
+				const errorText = await response.text();
+				verifyError = errorText || 'Unable to verify the transcript right now.';
+				return;
+			}
+
+			if (!response.body) {
+				verifyError = 'No response stream returned from the model.';
+				return;
+			}
+
+			const reader = response.body.getReader();
+			const decoder = new TextDecoder();
+			let buffer = '';
+			let scheduledScroll = false;
+
+			while (true) {
+				const { value, done } = await reader.read();
+				if (done) break;
+				buffer += decoder.decode(value, { stream: true });
+
+				const events = buffer.split('\n\n');
+				buffer = events.pop() ?? '';
+
+				for (const event of events) {
+					const line = event.split('\n').find((part) => part.startsWith('data: '));
+					if (!line) continue;
+					const payload = line.slice(6);
+					try {
+						const { text } = JSON.parse(payload) as { text?: string };
+						if (text) {
+							verifyResult += text;
+							if (!scheduledScroll) {
+								scheduledScroll = true;
+								requestAnimationFrame(() => {
+									if (dialogBodyRef) {
+										dialogBodyRef.scrollTop = dialogBodyRef.scrollHeight;
+									}
+									scheduledScroll = false;
+								});
+							}
+						}
+					} catch {
+						// ignore malformed chunks
+					}
+				}
+			}
+		} catch (error) {
+			verifyError =
+				error instanceof Error ? error.message : 'Unable to verify the transcript right now.';
+		} finally {
+			verifyLoading = false;
+		}
+	};
 </script>
 
-<main class="page">
-	<section class="hero">
-		<div class="headline">
-			<p class="eyebrow">YouTube Fact Checker</p>
-			<h1>Lift the transcript, audit the claims.</h1>
-			<p class="subhead">
-				Drop a YouTube link and pull down the full transcript so you can copy, annotate, and
-				verify the facts fast.
+<main
+	class="min-h-screen bg-blue-100 bg-size-[200%_200%] px-6 py-4 text-[#0F172A] sm:px-10 md:py-10 lg:px-20"
+>
+	<section class="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
+		<div class="md:space-y-4">
+			<p class="text-[0.7rem] font-semibold tracking-[0.24em] text-[#475569] uppercase">
+				YouTube Fact Checker
+			</p>
+			<h1 class="hidden text-4xl leading-tight font-semibold text-[#0F172A] sm:text-5xl md:flex">
+				Lift the transcript, audit the claims.
+			</h1>
+			<p class="hidden max-w-2xl text-lg leading-relaxed text-[#475569] md:flex">
+				Drop a YouTube link and pull down the full transcript so you can copy, annotate, and verify
+				the facts fast.
 			</p>
 		</div>
-		<form class="card" method="POST" use:enhance={enhanceForm}>
-			<label class="field">
+		<form
+			class="grid gap-4 rounded-[1.4rem] border border-[#E2E8F0] bg-white p-7 shadow-[0_24px_40px_rgba(15,23,42,0.08)]"
+			method="POST"
+			use:enhance={enhanceForm}
+		>
+			<label class="grid gap-2 text-sm font-semibold text-[#0F172A]">
 				<span>Paste a YouTube URL</span>
 				<input
 					name="url"
@@ -61,277 +160,139 @@
 					required
 					placeholder="https://www.youtube.com/watch?v=VIDEO_ID"
 					bind:value={url}
+					class="rounded-[0.9rem] border border-[#E2E8F0] bg-white px-4 py-3 text-base transition focus:border-[#1D4ED8] focus:ring-2 focus:ring-[#1D4ED8]/30 focus:outline-none"
 				/>
 			</label>
-			<div class="actions">
-				<button class="primary" type="submit" disabled={isLoading}>
+			<div class="grid gap-2">
+				<button
+					class="rounded-full bg-[#1D4ED8] px-6 py-3 text-base font-semibold text-white transition hover:-translate-y-0.5 hover:shadow-[0_12px_24px_rgba(29,78,216,0.25)] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0 disabled:hover:shadow-none"
+					type="submit"
+					disabled={isLoading}
+				>
 					{isLoading ? 'Fetching transcript…' : 'Get transcript'}
 				</button>
-				<p class="helper">Captions must be enabled for the video.</p>
+				<p class="text-sm text-[#475569]">Captions must be enabled for the video.</p>
 			</div>
 			{#if error}
-				<p class="error">{error}</p>
+				<p class="text-sm font-semibold text-[#b3362f]">{error}</p>
 			{/if}
 		</form>
 	</section>
 
-	<section class="panel">
-		<header class="panel-header">
-			<div>
-				<h2>Transcript output</h2>
-				<p>
-					{#if transcript}
-						{words} words · {lines} lines
-					{:else}
-						Waiting for a video link.
-					{/if}
-				</p>
-			</div>
-			<div class="panel-actions">
-				<button class="ghost" type="button" onclick={handleCopy} disabled={!transcript}>
+	<section
+		class="mt-4 rounded-[1.6rem] border border-[#E2E8F0] bg-white p-6 shadow-[0_30px_50px_rgba(15,23,42,0.08)]"
+	>
+		<header class="flex flex-wrap items-center justify-between gap-4">
+			<div class="mt-4 flex w-full justify-between">
+				<button
+					class="rounded-full border border-[#E2E8F0] px-4 py-2 text-sm font-semibold text-[#0F172A] transition hover:bg-[#E2E8F0] disabled:cursor-not-allowed disabled:opacity-50"
+					type="button"
+					onclick={handleCopy}
+					disabled={!transcript}
+				>
 					Copy transcript
 				</button>
+				<button
+					class="rounded-full bg-[#1D4ED8] px-5 py-2 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:shadow-[0_10px_20px_rgba(29,78,216,0.25)] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0 disabled:hover:shadow-none"
+					type="button"
+					onclick={handleVerify}
+					disabled={!transcript || verifyLoading}
+				>
+					{verifyLoading ? 'Verifying…' : 'Verify'}
+				</button>
+
 				{#if copyStatus}
-					<span class="copy-status">{copyStatus}</span>
+					<span class="absolute top-2 right-2 animate-bounce text-sm font-semibold text-[#1D4ED8]"
+						>{copyStatus}</span
+					>
 				{/if}
 			</div>
 		</header>
 
-		<div class="transcript-shell">
+		<div
+			class="mt-6 max-h-88 min-h-56 w-full overflow-auto rounded-2xl border border-[#E2E8F0] bg-white p-5"
+		>
 			{#if transcript}
-				<pre>{transcript}</pre>
+				<pre
+					class="w-full font-mono text-[0.95rem] leading-relaxed whitespace-pre-wrap text-[#0F172A]">
+					{transcript}
+				</pre>
 			{:else}
-				<div class="empty">
+				<div class="space-y-3 text-sm leading-relaxed text-[#475569]">
 					<p>No transcript yet. Paste a link to start pulling captions.</p>
-					<ul>
+					<ul class="list-disc space-y-1 pl-5">
 						<li>Supports watch, short, and embed links.</li>
 						<li>Private or caption-free videos will return an error.</li>
 					</ul>
 				</div>
 			{/if}
 		</div>
+		<div>
+			<h2 class="text-lg font-semibold">Transcript output</h2>
+			<p class="mt-1 text-sm text-[#475569]">
+				{#if transcript}
+					{words} words · {lines} lines
+				{:else}
+					Waiting for a video link.
+				{/if}
+			</p>
+		</div>
+
+		{#if verifyError}
+			<p class="mt-3 text-sm font-semibold text-[#b3362f]">{verifyError}</p>
+		{/if}
 	</section>
 </main>
 
+<dialog
+	bind:this={dialogRef}
+	class=" mt-4 h-full w-full max-w-none rounded-3xl border border-[#E2E8F0] bg-white p-0 text-left text-[#0F172A] shadow-[0_30px_60px_rgba(15,23,42,0.2)] backdrop:bg-black/40"
+>
+	<div class="flex items-start justify-between gap-4 border-b border-[#E2E8F0] px-6 py-5">
+		<div>
+			<p class="text-xs font-semibold tracking-[0.24em] text-[#475569] uppercase">
+				Verification report
+			</p>
+			<h3 class="text-xl font-semibold">Fact check summary</h3>
+		</div>
+		<button
+			class="rounded-full border border-[#E2E8F0] px-3 py-1 text-sm font-semibold text-[#0F172A] transition hover:bg-[#E2E8F0]"
+			type="button"
+			onclick={() => dialogRef?.close()}
+		>
+			Close
+		</button>
+	</div>
+	<div class="max-h-[60vh] overflow-auto px-6 py-5" bind:this={dialogBodyRef}>
+		{#if verifyLoading && !verifyResult}
+			<div class="space-y-3 text-sm text-[#475569]">
+				<div class="h-4 w-40 animate-pulse rounded-full bg-[#E2E8F0]"></div>
+				<div class="h-3 w-full animate-pulse rounded-full bg-[#E2E8F0]"></div>
+				<div class="h-3 w-11/12 animate-pulse rounded-full bg-[#E2E8F0]"></div>
+				<div class="h-3 w-10/12 animate-pulse rounded-full bg-[#E2E8F0]"></div>
+				<p class="text-sm font-semibold text-[#475569]">Verifying claims…</p>
+			</div>
+		{:else if verifyResult}
+			<div
+				class="space-y-3 text-sm leading-relaxed text-[#0F172A] [&_a]:text-[#1D4ED8] [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-black/20 [&_blockquote]:pl-3 [&_blockquote]:text-[#475569] [&_code]:rounded [&_code]:bg-black/5 [&_code]:px-1 [&_code]:py-0.5 [&_h1]:text-2xl [&_h1]:font-semibold [&_h1]:tracking-tight [&_h2]:text-xl [&_h2]:font-semibold [&_h2]:tracking-tight [&_h3]:text-lg [&_h3]:font-semibold [&_h3]:tracking-tight [&_ol]:list-decimal [&_ol]:pl-5 [&_ul]:list-disc [&_ul]:pl-5"
+				use:renderMarkdown={verifyHtml}
+			></div>
+		{:else if verifyError}
+			<p class="text-sm font-semibold text-[#b3362f]">{verifyError}</p>
+		{:else}
+			<p class="text-sm text-[#475569]">No verification response yet.</p>
+		{/if}
+	</div>
+</dialog>
+
 <style>
-	:global(body) {
-		margin: 0;
-		font-family: 'Space Grotesk', 'IBM Plex Sans', 'Segoe UI', sans-serif;
-		background: radial-gradient(circle at top, #ffe9c4 0%, #f5f0ea 45%, #eef4f3 100%);
-		color: #1f1a17;
-	}
-
-	:global(*) {
-		box-sizing: border-box;
-	}
-
-	.page {
-		min-height: 100vh;
-		padding: clamp(2.5rem, 5vw, 5rem);
-		display: grid;
-		gap: clamp(2rem, 4vw, 3rem);
-	}
-
-	.hero {
-		display: grid;
-		gap: 2rem;
-		grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-		align-items: start;
-	}
-
-	.headline h1 {
-		font-size: clamp(2.2rem, 4vw, 3.6rem);
-		line-height: 1.05;
-		margin: 0 0 1rem 0;
-	}
-
-	.eyebrow {
-		text-transform: uppercase;
-		letter-spacing: 0.24em;
-		font-size: 0.7rem;
-		font-weight: 600;
-		margin-bottom: 1rem;
-		color: #6d4a2f;
-	}
-
-	.subhead {
-		font-size: 1.1rem;
-		line-height: 1.6;
-		max-width: 34rem;
-		color: #3d312c;
-	}
-
-	.card {
-		background: rgba(255, 255, 255, 0.85);
-		padding: 1.8rem;
-		border-radius: 1.4rem;
-		box-shadow: 0 24px 40px rgba(132, 89, 52, 0.16);
-		backdrop-filter: blur(16px);
-		border: 1px solid rgba(120, 92, 72, 0.15);
-		display: grid;
-		gap: 1.2rem;
-	}
-
-	.field {
-		display: grid;
-		gap: 0.5rem;
-		font-weight: 600;
-		color: #3f3028;
-	}
-
-	.field input {
-		border-radius: 0.9rem;
-		border: 1px solid rgba(92, 67, 50, 0.2);
-		padding: 0.9rem 1rem;
-		font-size: 1rem;
-		transition: border-color 0.2s ease, box-shadow 0.2s ease;
-		background: #fffaf4;
-	}
-
-	.field input:focus {
-		outline: none;
-		border-color: #ea8e3d;
-		box-shadow: 0 0 0 3px rgba(234, 142, 61, 0.2);
-	}
-
-	.actions {
-		display: flex;
-		flex-direction: column;
-		gap: 0.6rem;
-	}
-
-	.primary {
-		background: #1f1a17;
-		color: #f7f1ea;
-		border: none;
-		padding: 0.95rem 1.6rem;
-		border-radius: 999px;
-		font-size: 1rem;
-		font-weight: 600;
-		cursor: pointer;
-		transition: transform 0.2s ease, box-shadow 0.2s ease;
-	}
-
-	.primary:hover {
-		transform: translateY(-1px);
-		box-shadow: 0 12px 24px rgba(31, 26, 23, 0.2);
-	}
-
-	.primary:disabled {
-		opacity: 0.6;
-		cursor: not-allowed;
-		transform: none;
-		box-shadow: none;
-	}
-
-	.helper {
-		margin: 0;
-		color: #6d5b52;
-		font-size: 0.9rem;
-	}
-
-	.error {
-		margin: 0;
-		color: #b3362f;
-		font-weight: 600;
-	}
-
-	.panel {
-		background: #ffffff;
-		border-radius: 1.6rem;
-		padding: clamp(1.4rem, 3vw, 2rem);
-		box-shadow: 0 30px 50px rgba(79, 65, 50, 0.12);
-		border: 1px solid rgba(86, 70, 54, 0.15);
-	}
-
-	.panel-header {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 1rem;
-		align-items: center;
-		justify-content: space-between;
-	}
-
-	.panel-header h2 {
-		margin: 0;
-		font-size: 1.2rem;
-	}
-
-	.panel-header p {
-		margin: 0.3rem 0 0;
-		color: #6d5b52;
-	}
-
-	.panel-actions {
-		display: flex;
-		align-items: center;
-		gap: 0.8rem;
-	}
-
-	.ghost {
-		background: transparent;
-		border: 1px solid rgba(86, 70, 54, 0.3);
-		padding: 0.6rem 1rem;
-		border-radius: 999px;
-		cursor: pointer;
-		font-weight: 600;
-		color: #3a2d26;
-		transition: background 0.2s ease, color 0.2s ease;
-	}
-
-	.ghost:disabled {
-		opacity: 0.5;
-		cursor: not-allowed;
-	}
-
-	.ghost:hover:not(:disabled) {
-		background: #f3e9de;
-	}
-
-	.copy-status {
-		font-size: 0.85rem;
-		color: #176b58;
-		font-weight: 600;
-	}
-
-	.transcript-shell {
-		margin-top: 1.5rem;
-		background: #fdf9f4;
-		border-radius: 1rem;
-		border: 1px solid rgba(86, 70, 54, 0.12);
-		padding: 1.2rem;
-		min-height: 14rem;
-		max-height: 22rem;
-		overflow: auto;
-	}
-
-	.transcript-shell pre {
-		white-space: pre-wrap;
-		margin: 0;
-		font-family: 'IBM Plex Mono', 'Space Mono', ui-monospace, monospace;
-		line-height: 1.6;
-		font-size: 0.95rem;
-		color: #2f2520;
-	}
-
-	.empty {
-		color: #6a5a52;
-		line-height: 1.6;
-	}
-
-	.empty ul {
-		margin: 0.8rem 0 0;
-		padding-left: 1.2rem;
-	}
-
-	@media (max-width: 720px) {
-		.page {
-			padding: 2rem 1.5rem 3rem;
+	@keyframes gradientShift {
+		0%,
+		100% {
+			background-position: 0% 50%;
 		}
-
-		.panel-actions {
-			width: 100%;
-			justify-content: flex-start;
+		50% {
+			background-position: 100% 50%;
 		}
 	}
 </style>
