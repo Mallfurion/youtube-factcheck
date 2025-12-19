@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-	import { marked } from 'marked';
-	import DOMPurify from 'isomorphic-dompurify';
+	import { onMount } from 'svelte';
 	import type { SubmitFunction } from '@sveltejs/kit';
 
 	const { form } = $props<{
@@ -20,9 +19,19 @@
 	let verifyResult = $state('');
 	let dialogRef = $state<HTMLDialogElement | null>(null);
 	let dialogBodyRef = $state<HTMLDivElement | null>(null);
+	let sanitizeMarkdown = $state<((input: string) => string) | null>(null);
+
+	onMount(async () => {
+		const [{ marked }, { default: DOMPurify }] = await Promise.all([
+			import('marked'),
+			import('dompurify')
+		]);
+		sanitizeMarkdown = (input: string) =>
+			DOMPurify.sanitize(marked.parse(input, { async: false }) as string);
+	});
 
 	const verifyHtml = $derived(
-		verifyResult ? DOMPurify.sanitize(marked.parse(verifyResult, { async: false }) as string) : ''
+		verifyResult && sanitizeMarkdown ? sanitizeMarkdown(verifyResult) : ''
 	);
 
 	const renderMarkdown = (node: HTMLElement, html: string) => {
