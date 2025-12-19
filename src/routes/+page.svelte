@@ -263,7 +263,7 @@
 			Close
 		</button>
 	</div>
-	<div class="max-h-[60vh] overflow-auto px-6 py-5" bind:this={dialogBodyRef}>
+	<div class="max-h-[90vh] overflow-auto px-6 py-5" bind:this={dialogBodyRef}>
 		{#if verifyLoading && !verifyResult}
 			<div class="space-y-3 text-sm text-[#475569]">
 				<div class="h-4 w-40 animate-pulse rounded-full bg-[#E2E8F0]"></div>
