@@ -2,7 +2,14 @@ export { ProxyInterface } from './classes';
 export type { ProxyInterfaceOptions } from './classes';
 export { QuickProxy } from './quickProxy';
 export { Proxy } from './models';
-export type { CacheData, Provider, ProviderFunction, ProxyProtocol, ProxyRecord } from './models';
+export type {
+	CacheData,
+	Provider,
+	ProviderFunction,
+	ProxyListFile,
+	ProxyProtocol,
+	ProxyRecord
+} from './models';
 export {
 	Anonym0usWork1221,
 	GenericPlainTextProxyProvider,
@@ -19,6 +26,7 @@ export {
 export { UnsupportedProxyProtocol } from './exceptions';
 export { checkExpiry, getExpiry } from './cache';
 export { checkProxy, deduplicateProxies, log, normalizeCountries, plaintextToProxies } from './helpers';
+export { normalizeProxyList, parseProxyListData, readProxyListFile, writeProxyListFile } from './proxy-list';
 export { findIpv4InString, validateProxies } from './validator';
 export type {
 	MonosansContinent,

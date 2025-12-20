@@ -6,8 +6,9 @@ import path from 'node:path';
 import { checkExpiry, getExpiry } from './cache';
 import { UnsupportedProxyProtocol } from './exceptions';
 import { deduplicateProxies, normalizeCountries } from './helpers';
-import type { CacheData, Provider, ProviderFunction, ProxyProtocol } from './models';
+import type { CacheData, Provider, ProviderFunction, ProxyProtocol, ProxyRecord } from './models';
 import { Proxy } from './models';
+import { normalizeProxyList, writeProxyListFile } from './proxy-list';
 import { Providers as ProvidersMap } from './providers';
 
 type Logger = {
@@ -87,6 +88,7 @@ export type ProxyInterfaceOptions = {
 	countries?: string[];
 	protocol?: ProxyProtocol;
 	selectedProviders?: ProviderFunction[];
+	proxyList?: Array<ProxyRecord | Proxy>;
 	maxProxies?: number;
 	autoRotate?: boolean;
 	autoUpdate?: boolean;
@@ -110,6 +112,7 @@ export class ProxyInterface {
 	cacheExpiry: Date | null = null;
 	autoUpdate: boolean;
 
+	private proxyList: Proxy[] = [];
 	private logger: Logger;
 	private cacheFilePath: string;
 	private updatePromise: Promise<void> | null = null;
@@ -118,6 +121,7 @@ export class ProxyInterface {
 		countries = [],
 		protocol = 'http',
 		selectedProviders = [],
+		proxyList = [],
 		maxProxies = 10,
 		autoRotate = false,
 		autoUpdate = true,
@@ -149,6 +153,7 @@ export class ProxyInterface {
 			this.providers = Array.from(ProvidersMap.values());
 		}
 
+		this.proxyList = normalizeProxyList(proxyList);
 		this.maxProxies = maxProxies;
 		this.autorotate = autoRotate;
 		this.cachePeriod = cachePeriod;
@@ -233,6 +238,15 @@ export class ProxyInterface {
 		this.current = null;
 		this.cacheExpiry = null;
 
+		if (this.proxyList.length > 0) {
+			const filtered = this.proxyList.filter((proxy) => proxy.protocol === this.protocol);
+			if (filtered.length > 0) {
+				this.proxies = deduplicateProxies(filtered).slice(0, this.maxProxies);
+				this.current = this.proxies[0] ?? null;
+				return;
+			}
+		}
+
 		await this.loadCache();
 		if (this.proxies.length > 0) {
 			return;
@@ -285,6 +299,16 @@ export class ProxyInterface {
 
 	async async_update(): Promise<void> {
 		return this.asyncUpdate();
+	}
+
+	async exportProxyList(filePath: string): Promise<void> {
+		if (this.proxies.length === 0) {
+			await this.update();
+		}
+		if (this.proxies.length === 0) {
+			throw new Error('No proxies available to export.');
+		}
+		await writeProxyListFile(filePath, this.proxies, this.protocol);
 	}
 
 	private async ensureUpdated(): Promise<void> {

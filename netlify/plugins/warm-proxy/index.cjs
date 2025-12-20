@@ -52,20 +52,30 @@ const requestWarm = (url, secret) =>
 
 module.exports = {
 	onSuccess: async ({ utils }) => {
-		const status = utils?.status?.show ? utils.status.show.bind(utils.status) : console.log;
+		const report = (summary, text) => {
+			if (utils?.status?.show) {
+				utils.status.show({ summary, text });
+				return;
+			}
+			if (text) {
+				console.log(`${summary} ${text}`);
+				return;
+			}
+			console.log(summary);
+		};
 		const warmUrl = buildWarmUrl();
 		if (!warmUrl) {
-			status('Proxy warm skipped (no URL available).');
+			report('Proxy warm skipped (no URL available).');
 			return;
 		}
 
 		const result = await requestWarm(warmUrl, process.env.PROXY_WARM_SECRET || '');
 		if (result.statusCode >= 200 && result.statusCode < 300) {
-			status(`Proxy warm succeeded (${result.statusCode}).`);
+			report('Proxy warm succeeded.', `(${result.statusCode})`);
 			return;
 		}
 
 		const detail = result.body ? ` ${result.body}` : '';
-		status(`Proxy warm failed (${result.statusCode} ${result.statusMessage}).${detail}`);
+		report('Proxy warm failed.', `(${result.statusCode} ${result.statusMessage}).${detail}`);
 	}
 };

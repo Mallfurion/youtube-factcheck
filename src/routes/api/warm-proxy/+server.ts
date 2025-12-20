@@ -1,5 +1,7 @@
 import { json } from '@sveltejs/kit';
+import { dev } from '$app/environment';
 import { env } from '$env/dynamic/private';
+import { fileURLToPath } from 'node:url';
 import { ProxyInterface } from '$lib/proxy-rotation/src';
 import type { RequestHandler } from './$types';
 
@@ -17,6 +19,10 @@ const proxyRotation = new ProxyInterface({
 	cacheFolderPath: env.PROXY_ROTATION_CACHE_DIR ?? undefined,
 	debug: env.TRANSCRIPT_DEBUG === 'true'
 });
+
+const PROXY_LIST_FILE_PATH = fileURLToPath(
+	new URL('../../../lib/proxy-rotation/src/proxy-list.json', import.meta.url)
+);
 
 let warmPromise: Promise<void> | null = null;
 
@@ -38,6 +44,12 @@ const isAuthorized = (request: Request): boolean => {
 	return header === `Bearer ${secret}`;
 };
 
+const shouldWriteListFile = (request: Request): boolean => {
+	const url = new URL(request.url);
+	const value = url.searchParams.get('writeList')?.toLowerCase();
+	return value === '1' || value === 'true' || value === 'yes';
+};
+
 const handleWarm: RequestHandler = async ({ request }) => {
 	if (!isAuthorized(request)) {
 		return json({ ok: false, error: 'Unauthorized' }, { status: 401 });
@@ -45,11 +57,17 @@ const handleWarm: RequestHandler = async ({ request }) => {
 
 	try {
 		await ensureWarm();
+		const allowWrite = dev || env.PROXY_LIST_WRITE_ENABLED === 'true';
+		const shouldWrite = allowWrite && shouldWriteListFile(request);
+		if (shouldWrite) {
+			await proxyRotation.exportProxyList(PROXY_LIST_FILE_PATH);
+		}
 		return json({
 			ok: true,
 			message: 'Proxy cache warmed.',
 			proxies: proxyRotation.proxies.length,
-			cacheExpiry: proxyRotation.cacheExpiry?.toISOString() ?? null
+			cacheExpiry: proxyRotation.cacheExpiry?.toISOString() ?? null,
+			listWritten: shouldWrite
 		});
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);

@@ -15,7 +15,8 @@ import {
 	type FetchedTranscriptSnippet
 } from '$lib/youtube-transcript/src';
 import { decodeHtml } from '$lib/youtube-transcript/src/utils';
-import { ProxyInterface } from '$lib/proxy-rotation/src';
+import { ProxyInterface, parseProxyListData } from '$lib/proxy-rotation/src';
+import proxyListData from '$lib/proxy-rotation/src/proxy-list.json';
 import type { Actions } from './$types';
 
 const YOUTUBE_HOSTS = new Set([
@@ -33,6 +34,8 @@ const parseEnvNumber = (value: string | undefined, fallback: number): number => 
 	return Number.isNaN(parsed) ? fallback : parsed;
 };
 
+const proxyList = parseProxyListData(proxyListData);
+
 const proxyRotation = new ProxyInterface({
 	protocol: 'http',
 	autoRotate: true,
@@ -40,6 +43,7 @@ const proxyRotation = new ProxyInterface({
 	cachePeriod: parseEnvNumber(env.PROXY_ROTATION_CACHE_PERIOD, 10),
 	maxProxies: parseEnvNumber(env.PROXY_ROTATION_MAX_PROXIES, 20),
 	cacheFolderPath: env.PROXY_ROTATION_CACHE_DIR ?? undefined,
+	proxyList,
 	debug: env.TRANSCRIPT_DEBUG === 'true'
 });
 

@@ -40,6 +40,12 @@ export type CacheData = {
 	proxies: ProxyRecord[];
 };
 
+export type ProxyListFile = {
+	generatedAt: string;
+	protocol: ProxyProtocol;
+	proxies: ProxyRecord[];
+};
+
 export type ProviderFunction = (countries: string[], protocol: ProxyProtocol) => Promise<Proxy[]>;
 
 export type Provider = {
