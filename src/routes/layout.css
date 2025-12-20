@@ -1,2 +1,30 @@
 @import 'tailwindcss';
 @custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+	--color-primary: 29 78 216;
+	--color-secondary: 71 85 105;
+}
+
+.dark {
+	--color-primary: 56 189 248;
+	--color-secondary: 148 163 184;
+}
+
+@layer utilities {
+	.text-primary {
+		color: rgb(var(--color-primary) / 1);
+	}
+
+	.bg-primary {
+		background-color: rgb(var(--color-primary) / 1);
+	}
+
+	.text-secondary {
+		color: rgb(var(--color-secondary) / 1);
+	}
+
+	.border-primary {
+		border-color: rgb(var(--color-primary) / 1);
+	}
+}
