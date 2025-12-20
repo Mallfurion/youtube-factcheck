@@ -3,7 +3,6 @@ import { env } from '$env/dynamic/private';
 import {
 	AgeRestricted,
 	FailedToCreateConsentCookie,
-	GenericProxyConfig,
 	IpBlocked,
 	RequestBlocked,
 	TranscriptsDisabled,
@@ -15,8 +14,6 @@ import {
 	type FetchedTranscriptSnippet
 } from '$lib/youtube-transcript/src';
 import { decodeHtml } from '$lib/youtube-transcript/src/utils';
-import { ProxyInterface, parseProxyListData } from '$lib/proxy-rotation/src';
-import proxyListData from '$lib/proxy-rotation/src/proxy-list.json';
 import type { Actions } from './$types';
 
 const YOUTUBE_HOSTS = new Set([
@@ -28,26 +25,6 @@ const YOUTUBE_HOSTS = new Set([
 ]);
 
 const VIDEO_ID_REGEX = /^[a-zA-Z0-9_-]{11}$/;
-
-const parseEnvNumber = (value: string | undefined, fallback: number): number => {
-	const parsed = Number.parseInt(value ?? '', 10);
-	return Number.isNaN(parsed) ? fallback : parsed;
-};
-
-const proxyList = parseProxyListData(proxyListData);
-
-const proxyRotation = new ProxyInterface({
-	protocol: 'http',
-	autoRotate: true,
-	autoUpdate: true,
-	cachePeriod: parseEnvNumber(env.PROXY_ROTATION_CACHE_PERIOD, 10),
-	maxProxies: parseEnvNumber(env.PROXY_ROTATION_MAX_PROXIES, 20),
-	cacheFolderPath: env.PROXY_ROTATION_CACHE_DIR ?? undefined,
-	proxyList,
-	debug: env.TRANSCRIPT_DEBUG === 'true'
-});
-
-const MAX_PROXY_ATTEMPTS = parseEnvNumber(env.PROXY_ROTATION_MAX_ATTEMPTS, 3);
 
 const extractVideoId = (input: string): string | null => {
 	const trimmed = input.trim();
