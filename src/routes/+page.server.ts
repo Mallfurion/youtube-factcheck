@@ -76,38 +76,6 @@ const extractVideoId = (input: string): string | null => {
 	return null;
 };
 
-const fetchTranscriptWithProxyRotation = async (videoId: string) => {
-	let lastError: unknown = null;
-
-	for (let attempt = 0; attempt < MAX_PROXY_ATTEMPTS; attempt += 1) {
-		let proxyConfig: GenericProxyConfig;
-		try {
-			const proxy = await proxyRotation.get();
-			const proxyUrl = proxy.asString();
-			proxyConfig = new GenericProxyConfig({ httpUrl: proxyUrl, httpsUrl: proxyUrl });
-		} catch (error) {
-			lastError = error;
-			break;
-		}
-
-		const api = new YouTubeTranscriptApi({ proxyConfig });
-		try {
-			return await api.fetch(videoId, { languages: ['en'] });
-		} catch (error) {
-			lastError = error;
-			if (error instanceof RequestBlocked || error instanceof IpBlocked) {
-				continue;
-			}
-			throw error;
-		}
-	}
-
-	if (lastError) {
-		throw lastError;
-	}
-	throw new Error('Unable to fetch the transcript with proxy rotation.');
-};
-
 export const actions: Actions = {
 	default: async ({ request }) => {
 		const data = await request.formData();
@@ -125,7 +93,8 @@ export const actions: Actions = {
 		}
 
 		try {
-			const transcriptData = await fetchTranscriptWithProxyRotation(videoId);
+			const api = new YouTubeTranscriptApi();
+			const transcriptData = await api.fetch(videoId, { languages: ['en'] });
 			const transcript = transcriptData
 				.toRawData()
 				.map((item: FetchedTranscriptSnippet) => decodeHtml(item.text).replace(/\\n/g, ' '))

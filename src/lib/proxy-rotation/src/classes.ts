@@ -326,8 +326,10 @@ export class ProxyInterface {
 					this.logger.debug('Cache expired on rotate call, updating.');
 					await this.update();
 				}
-			} else {
+			} else if (this.proxies.length === 0) {
 				throw new Error('No cache available but validateCache is true.');
+			} else {
+				this.logger.debug('Cache validation skipped (no cache metadata available).');
 			}
 		}
 
