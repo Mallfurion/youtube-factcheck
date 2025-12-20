@@ -66,6 +66,10 @@ function getDefaultCacheFolder(): string {
 		return path.resolve(process.env.SWIFTSHADOW_CACHE_DIR);
 	}
 
+	if (process.env.NETLIFY || process.env.AWS_LAMBDA_FUNCTION_NAME) {
+		return path.join(os.tmpdir(), LOG_NAME);
+	}
+
 	const platform = os.platform();
 	if (platform === 'darwin') {
 		return path.join(os.homedir(), 'Library', 'Caches', LOG_NAME);
