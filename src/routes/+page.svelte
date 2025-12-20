@@ -20,6 +20,7 @@
 	let dialogRef = $state<HTMLDialogElement | null>(null);
 	let dialogBodyRef = $state<HTMLDivElement | null>(null);
 	let sanitizeMarkdown = $state<((input: string) => string) | null>(null);
+	let autoScrollEnabled = $state(true);
 
 	onMount(async () => {
 		const [{ marked }, { default: DOMPurify }] = await Promise.all([
@@ -75,6 +76,7 @@
 		verifyLoading = true;
 		verifyError = '';
 		verifyResult = '';
+		autoScrollEnabled = true;
 		dialogRef?.showModal();
 
 		try {
@@ -116,7 +118,7 @@
 						const { text } = JSON.parse(payload) as { text?: string };
 						if (text) {
 							verifyResult += text;
-							if (!scheduledScroll) {
+							if (autoScrollEnabled && !scheduledScroll) {
 								scheduledScroll = true;
 								requestAnimationFrame(() => {
 									if (dialogBodyRef) {
@@ -137,6 +139,12 @@
 		} finally {
 			verifyLoading = false;
 		}
+	};
+
+	const handleDialogScroll = () => {
+		if (!dialogBodyRef) return;
+		const { scrollTop, scrollHeight, clientHeight } = dialogBodyRef;
+		autoScrollEnabled = scrollHeight - scrollTop - clientHeight < 24;
 	};
 </script>
 
@@ -272,7 +280,11 @@
 			Close
 		</button>
 	</div>
-	<div class="max-h-[90vh] overflow-auto px-6 py-5" bind:this={dialogBodyRef}>
+	<div
+		class="max-h-[80vh] overflow-auto px-6 py-5"
+		bind:this={dialogBodyRef}
+		onscroll={handleDialogScroll}
+	>
 		{#if verifyLoading && !verifyResult}
 			<div class="space-y-3 text-sm text-[#475569]">
 				<div class="h-4 w-40 animate-pulse rounded-full bg-[#E2E8F0]"></div>
