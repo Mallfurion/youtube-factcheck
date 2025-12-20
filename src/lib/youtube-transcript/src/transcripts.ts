@@ -199,24 +199,36 @@ export class TranscriptList {
   }
 
   static build(httpClient: HttpClient, videoId: string, captionsJson: Record<string, unknown>): TranscriptList {
-    const translationLanguages = ((captionsJson.translationLanguages as TranslationLanguage[]) || []).map(
-      (translationLanguage: any) => ({
-        language: translationLanguage.languageName.runs[0].text,
-        languageCode: translationLanguage.languageCode,
-      })
-    );
+    const translationLanguagesRaw = Array.isArray(captionsJson.translationLanguages)
+      ? (captionsJson.translationLanguages as TranslationLanguage[])
+      : [];
+    const translationLanguages = translationLanguagesRaw.map((translationLanguage: any) => ({
+      language:
+        translationLanguage?.languageName?.runs?.[0]?.text ??
+        translationLanguage?.languageName?.simpleText ??
+        translationLanguage?.languageCode ??
+        "Unknown",
+      languageCode: translationLanguage?.languageCode ?? "unknown",
+    }));
 
     const manuallyCreatedTranscripts: Record<string, Transcript> = {};
     const generatedTranscripts: Record<string, Transcript> = {};
 
-    for (const caption of captionsJson.captionTracks as Array<Record<string, any>>) {
+    const captionTracks = Array.isArray(captionsJson.captionTracks)
+      ? (captionsJson.captionTracks as Array<Record<string, any>>)
+      : [];
+    if (!captionTracks.length) {
+      throw new TranscriptsDisabled(videoId);
+    }
+
+    for (const caption of captionTracks) {
       const target = caption.kind === "asr" ? generatedTranscripts : manuallyCreatedTranscripts;
       target[caption.languageCode] = new Transcript({
         httpClient,
         videoId,
         url: String(caption.baseUrl).replace("&fmt=srv3", ""),
-        language: caption.name.runs[0].text,
-        languageCode: caption.languageCode,
+        language: caption?.name?.runs?.[0]?.text ?? caption?.name?.simpleText ?? caption.languageCode,
+        languageCode: caption.languageCode ?? "unknown",
         isGenerated: caption.kind === "asr",
         translationLanguages: caption.isTranslatable ? translationLanguages : [],
       });
@@ -380,6 +392,11 @@ export class TranscriptListFetcher {
 
   private async _fetchVideoHtml(videoId: string): Promise<string> {
     let html = await this._fetchHtml(videoId);
+    const debug = process.env.TRANSCRIPT_DEBUG === "true";
+    if (debug) {
+      console.info(`[youtube-transcript] html length=${html.length}`);
+      console.info(`[youtube-transcript] html head=${html.slice(0, 400)}`);
+    }
     if (html.includes('action="https://consent.youtube.com/s"')) {
       this._createConsentCookie(html, videoId);
       html = await this._fetchHtml(videoId);
@@ -448,6 +465,11 @@ function raiseHttpErrors(response: Response, videoId: string): Response {
     throw new IpBlocked(videoId);
   }
   if (!response.ok) {
+    if (process.env.TRANSCRIPT_DEBUG === "true") {
+      console.error(
+        `[youtube-transcript] request failed: ${response.status} ${response.statusText} (${response.url})`
+      );
+    }
     throw new YouTubeRequestFailed(videoId, `${response.status} ${response.statusText}`);
   }
   return response;

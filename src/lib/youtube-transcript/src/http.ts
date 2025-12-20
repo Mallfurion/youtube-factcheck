@@ -114,6 +114,21 @@ export class HttpClient {
       fetchOptions.dispatcher = this._agent;
     }
 
-    return this._fetch(url, fetchOptions);
+    const response = await this._fetch(url, fetchOptions);
+    const debug = process.env.TRANSCRIPT_DEBUG === "true";
+    if (debug) {
+      const method = (fetchOptions.method || "GET").toUpperCase();
+      console.info(`[youtube-transcript] ${method} ${url} -> ${response.status}`);
+      if (!response.ok) {
+        try {
+          const body = await response.clone().text();
+          console.info(`[youtube-transcript] response body (head): ${body.slice(0, 500)}`);
+        } catch (error) {
+          console.info(`[youtube-transcript] failed to read error body: ${String(error)}`);
+        }
+      }
+    }
+
+    return response;
   }
 }
