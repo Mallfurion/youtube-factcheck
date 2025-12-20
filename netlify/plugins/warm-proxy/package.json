@@ -1,0 +1,5 @@
+{
+	"name": "netlify-warm-proxy",
+	"version": "0.0.0",
+	"main": "index.cjs"
+}

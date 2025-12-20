@@ -2,10 +2,11 @@ import { json } from '@sveltejs/kit';
 import { GOOGLE_AI_API_KEY } from '$env/static/private';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import type { RequestHandler } from './$types';
+import { env } from '$env/dynamic/private';
 
 const MODEL = process.env.GOOGLE_AI_MODEL || 'gemini-2.5-flash';
 
-const SYSTEM_INSTRUCTION = [
+const SYSTEM_INSTRUCTION_SET = [
 	'You are a rigorous fact checker.',
 	'You are receiving as user prompt a transcript from a YouTube video.',
 	'Extract all the facts from this transcript, analyze them, identify factual claims, and flag any that are dubious or need citations.',
@@ -15,7 +16,11 @@ const SYSTEM_INSTRUCTION = [
 	'Lastly, create a list with the studies that were found, as links to the studies, having the name of the study as text.',
 	'Each heading should be a H2 (##).',
 	'Use emojis when relevant.'
-].join(' ');
+];
+
+if (env.ENABLE_SHORT_VERIFICATION) SYSTEM_INSTRUCTION_SET.push('Keep it short and concise.');
+
+const SYSTEM_INSTRUCTION = SYSTEM_INSTRUCTION_SET.join(' ');
 
 export const POST: RequestHandler = async ({ request }) => {
 	if (!GOOGLE_AI_API_KEY) {

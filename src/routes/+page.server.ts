@@ -3,6 +3,7 @@ import { env } from '$env/dynamic/private';
 import {
 	AgeRestricted,
 	FailedToCreateConsentCookie,
+	GenericProxyConfig,
 	IpBlocked,
 	RequestBlocked,
 	TranscriptsDisabled,
@@ -11,10 +12,10 @@ import {
 	YouTubeDataUnparsable,
 	YouTubeRequestFailed,
 	YouTubeTranscriptApi,
-	WebshareProxyConfig,
 	type FetchedTranscriptSnippet
 } from '$lib/youtube-transcript/src';
 import { decodeHtml } from '$lib/youtube-transcript/src/utils';
+import { ProxyInterface } from '$lib/proxy-rotation/src';
 import type { Actions } from './$types';
 
 const YOUTUBE_HOSTS = new Set([
@@ -26,6 +27,23 @@ const YOUTUBE_HOSTS = new Set([
 ]);
 
 const VIDEO_ID_REGEX = /^[a-zA-Z0-9_-]{11}$/;
+
+const parseEnvNumber = (value: string | undefined, fallback: number): number => {
+	const parsed = Number.parseInt(value ?? '', 10);
+	return Number.isNaN(parsed) ? fallback : parsed;
+};
+
+const proxyRotation = new ProxyInterface({
+	protocol: 'http',
+	autoRotate: true,
+	autoUpdate: true,
+	cachePeriod: parseEnvNumber(env.PROXY_ROTATION_CACHE_PERIOD, 10),
+	maxProxies: parseEnvNumber(env.PROXY_ROTATION_MAX_PROXIES, 20),
+	cacheFolderPath: env.PROXY_ROTATION_CACHE_DIR ?? undefined,
+	debug: env.TRANSCRIPT_DEBUG === 'true'
+});
+
+const MAX_PROXY_ATTEMPTS = parseEnvNumber(env.PROXY_ROTATION_MAX_ATTEMPTS, 3);
 
 const extractVideoId = (input: string): string | null => {
 	const trimmed = input.trim();
@@ -54,6 +72,38 @@ const extractVideoId = (input: string): string | null => {
 	return null;
 };
 
+const fetchTranscriptWithProxyRotation = async (videoId: string) => {
+	let lastError: unknown = null;
+
+	for (let attempt = 0; attempt < MAX_PROXY_ATTEMPTS; attempt += 1) {
+		let proxyConfig: GenericProxyConfig;
+		try {
+			const proxy = await proxyRotation.get();
+			const proxyUrl = proxy.asString();
+			proxyConfig = new GenericProxyConfig({ httpUrl: proxyUrl, httpsUrl: proxyUrl });
+		} catch (error) {
+			lastError = error;
+			break;
+		}
+
+		const api = new YouTubeTranscriptApi({ proxyConfig });
+		try {
+			return await api.fetch(videoId, { languages: ['en'] });
+		} catch (error) {
+			lastError = error;
+			if (error instanceof RequestBlocked || error instanceof IpBlocked) {
+				continue;
+			}
+			throw error;
+		}
+	}
+
+	if (lastError) {
+		throw lastError;
+	}
+	throw new Error('Unable to fetch the transcript with proxy rotation.');
+};
+
 export const actions: Actions = {
 	default: async ({ request }) => {
 		const data = await request.formData();
@@ -71,15 +121,7 @@ export const actions: Actions = {
 		}
 
 		try {
-			let proxy = null;
-			if (env.WEBSHARE_PROXY_USERNAME && env.WEBSHARE_PROXY_PASSWORD) {
-				proxy = new WebshareProxyConfig({
-					proxyUsername: env.WEBSHARE_PROXY_USERNAME ?? '',
-					proxyPassword: env.WEBSHARE_PROXY_PASSWORD ?? ''
-				});
-			}
-			const api = new YouTubeTranscriptApi({ proxyConfig: proxy });
-			const transcriptData = await api.fetch(videoId, { languages: ['en'] });
+			const transcriptData = await fetchTranscriptWithProxyRotation(videoId);
 			const transcript = transcriptData
 				.toRawData()
 				.map((item: FetchedTranscriptSnippet) => decodeHtml(item.text).replace(/\\n/g, ' '))
@@ -110,7 +152,7 @@ export const actions: Actions = {
 				message = 'This video is unavailable.';
 			} else if (error instanceof RequestBlocked || error instanceof IpBlocked) {
 				message =
-					'YouTube is blocking requests from this server (common on Netlify). Try again later or use a proxy.';
+					'YouTube is blocking requests from this server (common on Netlify). Try again later or adjust proxy settings.';
 			} else if (error instanceof FailedToCreateConsentCookie) {
 				message = 'YouTube consent checks blocked the transcript retrieval.';
 			} else if (error instanceof YouTubeRequestFailed || error instanceof YouTubeDataUnparsable) {

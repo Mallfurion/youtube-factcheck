@@ -11,7 +11,8 @@
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json && npm run lint",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"format": "prettier --write .",
-		"lint": "eslint . && prettier --check ."
+		"lint": "eslint . && prettier --check .",
+		"proxy:warm": "node scripts/warm-proxy.js"
 	},
 	"devDependencies": {
 		"@eslint/compat": "^1.4.0",
