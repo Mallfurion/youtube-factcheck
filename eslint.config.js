@@ -46,5 +46,14 @@ export default defineConfig(
 				parser: ts.parser
 			}
 		}
+	},
+	{
+		files: ['src/lib/proxy-rotation/src/**/*.ts'],
+		languageOptions: {
+			parserOptions: {
+				projectService: true,
+				parser: ts.parser
+			}
+		}
 	}
 );
