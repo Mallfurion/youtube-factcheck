@@ -1,134 +1,151 @@
-import type { ProxyConfig } from "./proxies";
+import { ProxyConfig } from './proxies';
+import { ProxyAgent } from 'undici';
 
 export class CookieJar {
-  private _cookies: Array<{ name: string; value: string; domain: string }> = [];
+	private _cookies: Array<{ name: string; value: string; domain: string }> = [];
 
-  set(name: string, value: string, domain: string): void {
-    this._cookies.push({ name, value, domain });
-  }
+	set(name: string, value: string, domain: string): void {
+		this._cookies.push({ name, value, domain });
+	}
 
-  getHeader(url: string): string {
-    let host: string;
-    try {
-      host = new URL(url).hostname;
-    } catch (error) {
-      return "";
-    }
+	getHeader(url: string): string {
+		let host: string;
+		try {
+			host = new URL(url).hostname;
+		} catch (error) {
+			console.log(error);
+			return '';
+		}
 
-    const matching = this._cookies.filter((cookie) => {
-      if (!cookie.domain) {
-        return false;
-      }
-      if (host === cookie.domain) {
-        return true;
-      }
-      return host.endsWith(cookie.domain.replace(/^\./, ""));
-    });
+		const matching = this._cookies.filter((cookie) => {
+			if (!cookie.domain) {
+				return false;
+			}
+			if (host === cookie.domain) {
+				return true;
+			}
+			return host.endsWith(cookie.domain.replace(/^\./, ''));
+		});
 
-    if (!matching.length) {
-      return "";
-    }
+		if (!matching.length) {
+			return '';
+		}
 
-    return matching.map((cookie) => `${cookie.name}=${cookie.value}`).join("; ");
-  }
+		return matching.map((cookie) => `${cookie.name}=${cookie.value}`).join('; ');
+	}
 }
 
 export type Fetcher = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
 export class HttpClient {
-  private _fetch: Fetcher;
-  private _headers: Record<string, string>;
-  private _cookieJar: CookieJar;
-  private _proxyConfig: ProxyConfig | null;
-  private _agent: unknown;
-  private _extraFetchOptions: RequestInit;
+	private _fetch: Fetcher;
+	private _headers: Record<string, string>;
+	private _cookieJar: CookieJar;
+	private _proxyConfig: ProxyConfig | null;
+	private _agent: unknown;
+	private _extraFetchOptions: RequestInit;
 
-  constructor({
-    fetcher,
-    headers = {},
-    cookieJar = new CookieJar(),
-    proxyConfig = null,
-    agent = null,
-    extraFetchOptions = {},
-  }: {
-    fetcher: Fetcher;
-    headers?: Record<string, string>;
-    cookieJar?: CookieJar;
-    proxyConfig?: ProxyConfig | null;
-    agent?: unknown;
-    extraFetchOptions?: RequestInit;
-  }) {
-    if (!fetcher) {
-      throw new Error("A fetch implementation is required.");
-    }
-    this._fetch = fetcher;
-    this._headers = { ...headers };
-    this._cookieJar = cookieJar;
-    this._proxyConfig = proxyConfig;
-    this._agent = agent;
-    this._extraFetchOptions = extraFetchOptions;
-  }
+	constructor({
+		fetcher,
+		headers = {},
+		cookieJar = new CookieJar(),
+		proxyConfig = null,
+		agent = null,
+		extraFetchOptions = {}
+	}: {
+		fetcher: Fetcher;
+		headers?: Record<string, string>;
+		cookieJar?: CookieJar;
+		proxyConfig?: ProxyConfig | null;
+		agent?: unknown;
+		extraFetchOptions?: RequestInit;
+	}) {
+		if (!fetcher) {
+			throw new Error('A fetch implementation is required.');
+		}
+		this._fetch = fetcher;
+		this._headers = { ...headers };
+		this._cookieJar = cookieJar;
+		this._proxyConfig = proxyConfig;
+		this._agent = agent ?? this._buildProxyAgent(proxyConfig);
+		this._extraFetchOptions = extraFetchOptions;
+	}
 
-  setHeader(name: string, value: string): void {
-    this._headers[name] = value;
-  }
+	setHeader(name: string, value: string): void {
+		this._headers[name] = value;
+	}
 
-  setCookie(name: string, value: string, domain: string): void {
-    this._cookieJar.set(name, value, domain);
-  }
+	setCookie(name: string, value: string, domain: string): void {
+		this._cookieJar.set(name, value, domain);
+	}
 
-  async get(url: string, options: RequestInit = {}): Promise<Response> {
-    return this._request(url, { method: "GET", ...options });
-  }
+	async get(url: string, options: RequestInit = {}): Promise<Response> {
+		return this._request(url, { method: 'GET', ...options });
+	}
 
-  async post(url: string, options: RequestInit = {}): Promise<Response> {
-    return this._request(url, { method: "POST", ...options });
-  }
+	async post(url: string, options: RequestInit = {}): Promise<Response> {
+		return this._request(url, { method: 'POST', ...options });
+	}
 
-  private _buildHeaders(url: string, headers: HeadersInit = {}): HeadersInit {
-    const merged = { ...this._headers, ...(headers as Record<string, string>) };
+	private _buildHeaders(url: string, headers: HeadersInit = {}): HeadersInit {
+		const merged = { ...this._headers, ...(headers as Record<string, string>) };
 
-    const cookieHeader = this._cookieJar.getHeader(url);
-    if (cookieHeader) {
-      merged.Cookie = cookieHeader;
-    }
+		const cookieHeader = this._cookieJar.getHeader(url);
+		if (cookieHeader) {
+			merged.Cookie = cookieHeader;
+		}
 
-    if (this._proxyConfig && this._proxyConfig.preventKeepingConnectionsAlive) {
-      merged.Connection = "close";
-    }
+		if (this._proxyConfig && this._proxyConfig.preventKeepingConnectionsAlive) {
+			merged.Connection = 'close';
+		}
 
-    return merged;
-  }
+		return merged;
+	}
 
-  private async _request(url: string, options: RequestInit): Promise<Response> {
-    const headers = this._buildHeaders(url, options.headers);
+	private _buildProxyAgent(proxyConfig: ProxyConfig | null): unknown {
+		if (!proxyConfig) {
+			return null;
+		}
+		const proxyOptions = proxyConfig.toProxyOptions();
+		if (!proxyOptions) {
+			return null;
+		}
+		const proxyUrl = proxyOptions.https ?? proxyOptions.http;
+		if (!proxyUrl) {
+			return null;
+		}
+		return new ProxyAgent(proxyUrl);
+	}
 
-    const fetchOptions: RequestInit & { agent?: unknown; dispatcher?: unknown } = {
-      ...this._extraFetchOptions,
-      ...options,
-      headers,
-    };
+	private async _request(url: string, options: RequestInit): Promise<Response> {
+		const headers = this._buildHeaders(url, options.headers);
 
-    if (this._agent) {
-      fetchOptions.agent = this._agent;
-      fetchOptions.dispatcher = this._agent;
-    }
+		const fetchOptions: RequestInit & { agent?: unknown; dispatcher?: unknown } = {
+			...this._extraFetchOptions,
+			...options,
+			headers
+		};
 
-    const response = await this._fetch(url, fetchOptions);
-    const debug = process.env.TRANSCRIPT_DEBUG === "true";
-    if (debug) {
-      const method = (fetchOptions.method || "GET").toUpperCase();
-      console.info(`[youtube-transcript] ${method} ${url} -> ${response.status}`);
-      if (!response.ok) {
-        try {
-          const body = await response.clone().text();
-          console.info(`[youtube-transcript] response body (head): ${body.slice(0, 500)}`);
-        } catch (error) {
-          console.info(`[youtube-transcript] failed to read error body: ${String(error)}`);
-        }
-      }
-    }
+		if (this._agent) {
+			fetchOptions.agent = this._agent;
+			fetchOptions.dispatcher = this._agent;
+		}
 
-    return response;
-  }
+		const response = await this._fetch(url, fetchOptions);
+		const debug = process.env.TRANSCRIPT_DEBUG === 'true';
+		if (debug) {
+			const method = (fetchOptions.method || 'GET').toUpperCase();
+			console.info(`[youtube-transcript] ${method} ${url} -> ${response.status}`);
+			if (!response.ok) {
+				try {
+					const body = await response.clone().text();
+					console.info(`[youtube-transcript] response body (head): ${body.slice(0, 500)}`);
+				} catch (error) {
+					console.info(`[youtube-transcript] failed to read error body: ${String(error)}`);
+				}
+			}
+		}
+
+		return response;
+	}
 }
