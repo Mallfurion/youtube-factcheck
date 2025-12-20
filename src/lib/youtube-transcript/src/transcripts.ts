@@ -410,7 +410,10 @@ export class TranscriptListFetcher {
 		return captionsJson;
 	}
 
-	private _assertPlayability(playabilityStatusData: Record<string, unknown>, videoId: string): void {
+	private _assertPlayability(
+		playabilityStatusData: Record<string, unknown>,
+		videoId: string
+	): void {
 		const typedPlayability = playabilityStatusData as PlayabilityStatusData;
 		const playabilityStatus = typedPlayability.status;
 		if (playabilityStatus && playabilityStatus !== PLAYABILITY_STATUS.OK) {
