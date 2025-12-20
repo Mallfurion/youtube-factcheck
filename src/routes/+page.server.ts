@@ -16,7 +16,6 @@ import {
 } from '$lib/youtube-transcript/src';
 import { decodeHtml } from '$lib/youtube-transcript/src/utils';
 import type { Actions } from './$types';
-import { WEBSHARE_PROXY_PASSWORD, WEBSHARE_PROXY_USERNAME } from '$env/static/private';
 
 const YOUTUBE_HOSTS = new Set([
 	'youtube.com',
@@ -72,10 +71,13 @@ export const actions: Actions = {
 		}
 
 		try {
-			const proxy = new WebshareProxyConfig({
-				proxyUsername: WEBSHARE_PROXY_USERNAME,
-				proxyPassword: WEBSHARE_PROXY_PASSWORD
-			});
+			let proxy = null;
+			if (env.WEBSHARE_PROXY_USERNAME && env.WEBSHARE_PROXY_PASSWORD) {
+				proxy = new WebshareProxyConfig({
+					proxyUsername: env.WEBSHARE_PROXY_USERNAME ?? '',
+					proxyPassword: env.WEBSHARE_PROXY_PASSWORD ?? ''
+				});
+			}
 			const api = new YouTubeTranscriptApi({ proxyConfig: proxy });
 			const transcriptData = await api.fetch(videoId, { languages: ['en'] });
 			const transcript = transcriptData
