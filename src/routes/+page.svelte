@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { browser } from '$app/environment';
 	import { enhance } from '$app/forms';
 	import { onMount } from 'svelte';
 	import type { SubmitFunction } from '@sveltejs/kit';
@@ -25,6 +26,8 @@
 	let verifyStatusMessage = $state('');
 	let verifyProgressTimer: ReturnType<typeof setTimeout> | null = null;
 	let verifyStatusTimer: ReturnType<typeof setTimeout> | null = null;
+	let isDark = $state(false);
+	let themeInitialized = $state(false);
 
 	const verifyStatusMessages = [
 		'Parsing transcript segments',
@@ -50,12 +53,25 @@
 	];
 
 	onMount(async () => {
+		if (browser) {
+			const storedTheme = localStorage.getItem('theme');
+			const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+			isDark = storedTheme ? storedTheme === 'dark' : prefersDark;
+			themeInitialized = true;
+		}
+
 		const [{ marked }, { default: DOMPurify }] = await Promise.all([
 			import('marked'),
 			import('dompurify')
 		]);
 		sanitizeMarkdown = (input: string) =>
 			DOMPurify.sanitize(marked.parse(input, { async: false }) as string);
+	});
+
+	$effect(() => {
+		if (!browser || !themeInitialized) return;
+		document.documentElement.classList.toggle('dark', isDark);
+		localStorage.setItem('theme', isDark ? 'dark' : 'light');
 	});
 
 	const verifyHtml = $derived(
@@ -260,27 +276,44 @@
 </script>
 
 <main
-	class="min-h-screen bg-blue-100 bg-size-[200%_200%] px-6 py-4 text-[#0F172A] sm:px-10 md:py-10 lg:px-20"
+	class="min-h-screen bg-blue-100 bg-size-[200%_200%] px-6 pb-4 pt-6 text-[#0F172A] sm:px-10 md:pb-10 lg:px-20 dark:bg-slate-950 dark:text-slate-100"
 >
-	<section class="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
+	<div class="flex items-center justify-end">
+		<button
+			class="group relative inline-flex h-9 w-16 items-center rounded-full border border-[#E2E8F0] bg-white px-1 transition hover:shadow-[0_10px_20px_rgba(15,23,42,0.12)] dark:border-slate-700 dark:bg-slate-900 dark:hover:shadow-[0_10px_24px_rgba(15,23,42,0.4)]"
+			type="button"
+			aria-pressed={isDark}
+			aria-label="Toggle dark mode"
+			onclick={() => (isDark = !isDark)}
+		>
+			<span class="sr-only">Toggle dark mode</span>
+			<span
+				class="inline-flex h-6 w-6 items-center justify-center rounded-full bg-[#1D4ED8] text-[0.6rem] font-semibold text-white transition-transform duration-300 dark:bg-sky-400 dark:text-slate-900"
+				class:translate-x-7={isDark}
+			>
+				{isDark ? 'D' : 'L'}
+			</span>
+		</button>
+	</div>
+	<section class="mt-4 grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
 		<div class="md:space-y-4">
-			<p class="text-[0.7rem] font-semibold tracking-[0.24em] text-[#475569] uppercase">
+			<p class="text-[0.7rem] font-semibold tracking-[0.24em] text-[#475569] uppercase dark:text-slate-400">
 				YouTube Fact Checker
 			</p>
-			<h1 class="hidden text-4xl leading-tight font-semibold text-[#0F172A] sm:text-5xl md:flex">
+			<h1 class="hidden text-4xl leading-tight font-semibold text-[#0F172A] sm:text-5xl md:flex dark:text-slate-100">
 				Lift the transcript, audit the claims.
 			</h1>
-			<p class="hidden max-w-2xl text-lg leading-relaxed text-[#475569] md:flex">
+			<p class="hidden max-w-2xl text-lg leading-relaxed text-[#475569] md:flex dark:text-slate-400">
 				Drop a YouTube link and pull down the full transcript so you can copy, annotate, and verify
 				the facts fast.
 			</p>
 		</div>
 		<form
-			class="grid gap-4 rounded-[1.4rem] border border-[#E2E8F0] bg-white p-7 shadow-[0_24px_40px_rgba(15,23,42,0.08)]"
+			class="grid gap-4 rounded-[1.4rem] border border-[#E2E8F0] bg-white p-7 shadow-[0_24px_40px_rgba(15,23,42,0.08)] dark:border-slate-800 dark:bg-slate-900 dark:shadow-[0_30px_50px_rgba(15,23,42,0.4)]"
 			method="POST"
 			use:enhance={enhanceForm}
 		>
-			<label class="grid gap-2 text-sm font-semibold text-[#0F172A]">
+			<label class="grid gap-2 text-sm font-semibold text-[#0F172A] dark:text-slate-100">
 				<span>Paste a YouTube URL</span>
 				<input
 					name="url"
@@ -288,32 +321,34 @@
 					required
 					placeholder="https://www.youtube.com/watch?v=VIDEO_ID"
 					bind:value={url}
-					class="rounded-[0.9rem] border border-[#E2E8F0] bg-white px-4 py-3 text-base transition focus:border-[#1D4ED8] focus:ring-2 focus:ring-[#1D4ED8]/30 focus:outline-none"
+					class="rounded-[0.9rem] border border-[#E2E8F0] bg-white px-4 py-3 text-base transition focus:border-[#1D4ED8] focus:ring-2 focus:ring-[#1D4ED8]/30 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-sky-400 dark:focus:ring-sky-400/30"
 				/>
 			</label>
 			<div class="grid gap-2">
 				<button
-					class="rounded-full bg-[#1D4ED8] px-6 py-3 text-base font-semibold text-white transition hover:-translate-y-0.5 hover:shadow-[0_12px_24px_rgba(29,78,216,0.25)] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0 disabled:hover:shadow-none"
+					class="rounded-full bg-[#1D4ED8] px-6 py-3 text-base font-semibold text-white transition hover:-translate-y-0.5 hover:shadow-[0_12px_24px_rgba(29,78,216,0.25)] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0 disabled:hover:shadow-none dark:bg-sky-500 dark:text-slate-950 dark:hover:shadow-[0_12px_24px_rgba(56,189,248,0.35)]"
 					type="submit"
 					disabled={isLoading}
 				>
 					{isLoading ? 'Fetching transcript…' : 'Get transcript'}
 				</button>
-				<p class="text-sm text-[#475569]">Captions must be enabled for the video.</p>
+				<p class="text-sm text-[#475569] dark:text-slate-400">
+					Captions must be enabled for the video.
+				</p>
 			</div>
 			{#if error}
-				<p class="text-sm font-semibold text-[#b3362f]">{error}</p>
+				<p class="text-sm font-semibold text-[#b3362f] dark:text-red-400">{error}</p>
 			{/if}
 		</form>
 	</section>
 
 	<section
-		class="mt-4 rounded-[1.6rem] border border-[#E2E8F0] bg-white p-6 shadow-[0_30px_50px_rgba(15,23,42,0.08)]"
+		class="mt-4 rounded-[1.6rem] border border-[#E2E8F0] bg-white p-6 shadow-[0_30px_50px_rgba(15,23,42,0.08)] dark:border-slate-800 dark:bg-slate-900 dark:shadow-[0_30px_60px_rgba(15,23,42,0.45)]"
 	>
 		<header class="flex flex-wrap items-center justify-between gap-4">
 			<div class="mt-4 flex w-full justify-between">
 				<button
-					class="rounded-full border border-[#E2E8F0] px-4 py-2 text-sm font-semibold text-[#0F172A] transition hover:bg-[#E2E8F0] disabled:cursor-not-allowed disabled:opacity-50"
+					class="rounded-full border border-[#E2E8F0] px-4 py-2 text-sm font-semibold text-[#0F172A] transition hover:bg-[#E2E8F0] disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:text-slate-100 dark:hover:bg-slate-800"
 					type="button"
 					onclick={handleCopy}
 					disabled={!transcript}
@@ -321,7 +356,7 @@
 					Copy transcript
 				</button>
 				<button
-					class="rounded-full bg-[#1D4ED8] px-5 py-2 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:shadow-[0_10px_20px_rgba(29,78,216,0.25)] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0 disabled:hover:shadow-none"
+					class="rounded-full bg-[#1D4ED8] px-5 py-2 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:shadow-[0_10px_20px_rgba(29,78,216,0.25)] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0 disabled:hover:shadow-none dark:bg-sky-500 dark:text-slate-950 dark:hover:shadow-[0_12px_24px_rgba(56,189,248,0.3)]"
 					type="button"
 					onclick={handleVerify}
 					disabled={!transcript || verifyLoading}
@@ -330,7 +365,7 @@
 				</button>
 
 				{#if copyStatus}
-					<span class="absolute top-2 right-2 animate-bounce text-sm font-semibold text-[#1D4ED8]"
+					<span class="absolute top-2 right-2 animate-bounce text-sm font-semibold text-[#1D4ED8] dark:text-sky-400"
 						>{copyStatus}</span
 					>
 				{/if}
@@ -338,15 +373,15 @@
 		</header>
 
 		<div
-			class="mt-6 max-h-88 min-h-56 w-full overflow-auto rounded-2xl border border-[#E2E8F0] bg-white p-5"
+			class="mt-6 max-h-88 min-h-56 w-full overflow-auto rounded-2xl border border-[#E2E8F0] bg-white p-5 dark:border-slate-800 dark:bg-slate-950"
 		>
 			{#if transcript}
 				<pre
-					class="w-full font-mono text-[0.95rem] leading-relaxed whitespace-pre-wrap text-[#0F172A]">
+					class="w-full font-mono text-[0.95rem] leading-relaxed whitespace-pre-wrap text-[#0F172A] dark:text-slate-100">
 					{transcript}
 				</pre>
 			{:else}
-				<div class="space-y-3 text-sm leading-relaxed text-[#475569]">
+				<div class="space-y-3 text-sm leading-relaxed text-[#475569] dark:text-slate-400">
 					<p>No transcript yet. Paste a link to start pulling captions.</p>
 					<ul class="list-disc space-y-1 pl-5">
 						<li>Supports watch, short, and embed links.</li>
@@ -357,7 +392,7 @@
 		</div>
 		<div>
 			<h2 class="text-lg font-semibold">Transcript output</h2>
-			<p class="mt-1 text-sm text-[#475569]">
+			<p class="mt-1 text-sm text-[#475569] dark:text-slate-400">
 				{#if transcript}
 					{words} words · {lines} lines
 				{:else}
@@ -367,24 +402,24 @@
 		</div>
 
 		{#if verifyError}
-			<p class="mt-3 text-sm font-semibold text-[#b3362f]">{verifyError}</p>
+			<p class="mt-3 text-sm font-semibold text-[#b3362f] dark:text-red-400">{verifyError}</p>
 		{/if}
 	</section>
 </main>
 
 <dialog
 	bind:this={dialogRef}
-	class=" mt-4 h-full w-full max-w-none rounded-3xl border border-[#E2E8F0] bg-white p-0 text-left text-[#0F172A] shadow-[0_30px_60px_rgba(15,23,42,0.2)] backdrop:bg-black/40 md:m-auto md:w-[80vh]"
+	class=" mt-4 h-full w-full max-w-none rounded-3xl border border-[#E2E8F0] bg-white p-0 text-left text-[#0F172A] shadow-[0_30px_60px_rgba(15,23,42,0.2)] backdrop:bg-black/40 md:m-auto md:w-[80vh] dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100 dark:shadow-[0_30px_70px_rgba(0,0,0,0.6)]"
 >
-	<div class="flex items-start justify-between gap-4 border-b border-[#E2E8F0] px-6 py-5">
+	<div class="flex items-start justify-between gap-4 border-b border-[#E2E8F0] px-6 py-5 dark:border-slate-800">
 		<div>
-			<p class="text-xs font-semibold tracking-[0.24em] text-[#475569] uppercase">
+			<p class="text-xs font-semibold tracking-[0.24em] text-[#475569] uppercase dark:text-slate-400">
 				Verification report
 			</p>
 			<h3 class="text-xl font-semibold">Fact check summary</h3>
 		</div>
 		<button
-			class="rounded-full border border-[#E2E8F0] px-3 py-1 text-sm font-semibold text-[#0F172A] transition hover:bg-[#E2E8F0]"
+			class="rounded-full border border-[#E2E8F0] px-3 py-1 text-sm font-semibold text-[#0F172A] transition hover:bg-[#E2E8F0] dark:border-slate-700 dark:text-slate-100 dark:hover:bg-slate-800"
 			type="button"
 			onclick={() => dialogRef?.close()}
 		>
@@ -397,42 +432,42 @@
 		onscroll={handleDialogScroll}
 	>
 		{#if verifyLoading && !verifyResult}
-			<div class="space-y-4 text-sm text-[#475569]">
+			<div class="space-y-4 text-sm text-[#475569] dark:text-slate-400">
 				<div class="space-y-2">
 					<div
-						class="h-2 w-full overflow-hidden rounded-full bg-[#E2E8F0]"
+						class="h-2 w-full overflow-hidden rounded-full bg-[#E2E8F0] dark:bg-slate-800"
 						role="progressbar"
 						aria-valuemin="0"
 						aria-valuemax="100"
 						aria-valuenow={Math.round(verifyProgress)}
 					>
 						<div
-							class="h-full rounded-full bg-[#1D4ED8] transition-[width] duration-500 ease-out"
+							class="h-full rounded-full bg-[#1D4ED8] transition-[width] duration-500 ease-out dark:bg-sky-500"
 							style={`width: ${verifyProgress}%;`}
 						></div>
 					</div>
-					<div class="flex items-center justify-between text-xs font-semibold text-[#64748B]">
+					<div class="flex items-center justify-between text-xs font-semibold text-[#64748B] dark:text-slate-400">
 						<span>Verification progress</span>
 						<span>{Math.round(verifyProgress)}%</span>
 					</div>
 				</div>
-				<div class="h-4 w-40 animate-pulse rounded-full bg-[#E2E8F0]"></div>
-				<div class="h-3 w-full animate-pulse rounded-full bg-[#E2E8F0]"></div>
-				<div class="h-3 w-11/12 animate-pulse rounded-full bg-[#E2E8F0]"></div>
-				<div class="h-3 w-10/12 animate-pulse rounded-full bg-[#E2E8F0]"></div>
-				<p class="text-sm font-semibold text-[#475569]">
+				<div class="h-4 w-40 animate-pulse rounded-full bg-[#E2E8F0] dark:bg-slate-800"></div>
+				<div class="h-3 w-full animate-pulse rounded-full bg-[#E2E8F0] dark:bg-slate-800"></div>
+				<div class="h-3 w-11/12 animate-pulse rounded-full bg-[#E2E8F0] dark:bg-slate-800"></div>
+				<div class="h-3 w-10/12 animate-pulse rounded-full bg-[#E2E8F0] dark:bg-slate-800"></div>
+				<p class="text-sm font-semibold text-[#475569] dark:text-slate-400">
 					{verifyStatusMessage + ' ...' || 'Verifying claims…'}
 				</p>
 			</div>
 		{:else if verifyResult}
 			<div
-				class="space-y-3 text-sm leading-relaxed text-[#0F172A] [&_a]:text-[#1D4ED8] [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-black/20 [&_blockquote]:pl-3 [&_blockquote]:text-[#475569] [&_code]:rounded [&_code]:bg-black/5 [&_code]:px-1 [&_code]:py-0.5 [&_h1]:text-2xl [&_h1]:font-semibold [&_h1]:tracking-tight [&_h2]:text-xl [&_h2]:font-semibold [&_h2]:tracking-tight [&_h3]:text-lg [&_h3]:font-semibold [&_h3]:tracking-tight [&_ol]:list-decimal [&_ol]:pl-5 [&_ul]:list-disc [&_ul]:pl-5"
+				class="space-y-3 text-sm leading-relaxed text-[#0F172A] [&_a]:text-[#1D4ED8] [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-black/20 [&_blockquote]:pl-3 [&_blockquote]:text-[#475569] [&_code]:rounded [&_code]:bg-black/5 [&_code]:px-1 [&_code]:py-0.5 [&_h1]:text-2xl [&_h1]:font-semibold [&_h1]:tracking-tight [&_h2]:text-xl [&_h2]:font-semibold [&_h2]:tracking-tight [&_h3]:text-lg [&_h3]:font-semibold [&_h3]:tracking-tight [&_ol]:list-decimal [&_ol]:pl-5 [&_ul]:list-disc [&_ul]:pl-5 dark:text-slate-100 dark:[&_a]:text-sky-400 dark:[&_blockquote]:border-white/10 dark:[&_blockquote]:text-slate-300 dark:[&_code]:bg-white/10"
 				use:renderMarkdown={verifyHtml}
 			></div>
 		{:else if verifyError}
-			<p class="text-sm font-semibold text-[#b3362f]">{verifyError}</p>
+			<p class="text-sm font-semibold text-[#b3362f] dark:text-red-400">{verifyError}</p>
 		{:else}
-			<p class="text-sm text-[#475569]">No verification response yet.</p>
+			<p class="text-sm text-[#475569] dark:text-slate-400">No verification response yet.</p>
 		{/if}
 	</div>
 </dialog>
