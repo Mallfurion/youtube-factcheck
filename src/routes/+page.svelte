@@ -21,6 +21,33 @@
 	let dialogBodyRef = $state<HTMLDivElement | null>(null);
 	let sanitizeMarkdown = $state<((input: string) => string) | null>(null);
 	let autoScrollEnabled = $state(true);
+	let verifyProgress = $state(0);
+	let verifyStatusMessage = $state('');
+	let verifyProgressTimer: ReturnType<typeof setTimeout> | null = null;
+	let verifyStatusTimer: ReturnType<typeof setTimeout> | null = null;
+
+	const verifyStatusMessages = [
+		'Parsing transcript segments',
+		'Identifying factual claims',
+		'Extracting named entities',
+		'Detecting dates and numbers',
+		'Checking quotes against sources',
+		'Cross-referencing public data',
+		'Normalizing claim phrasing',
+		'Scanning for dubious assertions',
+		'Evaluating evidence strength',
+		'Comparing statements to known facts',
+		'Highlighting claims to verify',
+		'Ranking claims by impact',
+		'Reviewing contextual cues',
+		'Looking for missing context',
+		'Summarizing verification steps',
+		'Checking for contradictory sources',
+		'Evaluating uncertainty signals',
+		'Reconciling overlapping claims',
+		'Preparing citation-ready notes',
+		'Drafting verification summary'
+	];
 
 	onMount(async () => {
 		const [{ marked }, { default: DOMPurify }] = await Promise.all([
@@ -52,6 +79,85 @@
 	const words = $derived(transcript ? transcript.trim().split(/\s+/).filter(Boolean).length : 0);
 	const lines = $derived(transcript ? transcript.split('\n').length : 0);
 
+	const pickRandomStatusMessage = (current: string) => {
+		if (!verifyStatusMessages.length) return '';
+		if (verifyStatusMessages.length === 1) return verifyStatusMessages[0];
+		let next = current;
+		while (next === current) {
+			next = verifyStatusMessages[Math.floor(Math.random() * verifyStatusMessages.length)];
+		}
+		return next;
+	};
+
+	const stopVerifyLoadingEffects = (complete = false) => {
+		if (verifyProgressTimer) {
+			clearTimeout(verifyProgressTimer);
+			verifyProgressTimer = null;
+		}
+		if (verifyStatusTimer) {
+			clearTimeout(verifyStatusTimer);
+			verifyStatusTimer = null;
+		}
+		if (complete) {
+			verifyProgress = 100;
+		}
+	};
+
+	const startVerifyLoadingEffects = () => {
+		stopVerifyLoadingEffects();
+		verifyProgress = 0;
+		verifyStatusMessage = pickRandomStatusMessage('');
+
+		const totalDuration = 30000;
+		const chunkCount = 18 + Math.floor(Math.random() * 9);
+		const minChunk = 2;
+		const maxChunk = 10;
+		const minDelay = 450;
+		const maxDelay = 1800;
+
+		const rawChunks = Array.from(
+			{ length: chunkCount },
+			() => minChunk + Math.random() * (maxChunk - minChunk)
+		);
+		const chunkTotal = rawChunks.reduce((sum, value) => sum + value, 0);
+		const chunkSizes = rawChunks.map((value) => (value / chunkTotal) * 100);
+
+		const rawDurations = Array.from(
+			{ length: chunkCount },
+			() => minDelay + Math.random() * (maxDelay - minDelay)
+		);
+		const durationTotal = rawDurations.reduce((sum, value) => sum + value, 0);
+		const chunkDurations = rawDurations.map((value) => (value / durationTotal) * totalDuration);
+
+		let chunkIndex = 0;
+		const step = () => {
+			if (!verifyLoading || verifyResult) return;
+			verifyProgress = Math.min(99, verifyProgress + chunkSizes[chunkIndex]);
+			if (verifyProgress >= 99) {
+				verifyProgress = 99;
+				verifyStatusMessage = 'Summarizing findings ...';
+				return;
+			}
+			chunkIndex += 1;
+			if (chunkIndex >= chunkSizes.length) {
+				verifyProgress = 99;
+				verifyStatusMessage = 'Summarizing findings ...';
+				return;
+			}
+			verifyProgressTimer = setTimeout(step, chunkDurations[chunkIndex]);
+		};
+
+		verifyProgressTimer = setTimeout(step, chunkDurations[0]);
+
+		const scheduleStatus = () => {
+			if (!verifyLoading || verifyResult || verifyProgress >= 99) return;
+			verifyStatusMessage = pickRandomStatusMessage(verifyStatusMessage);
+			verifyStatusTimer = setTimeout(scheduleStatus, 2000 + Math.random() * 2000);
+		};
+
+		verifyStatusTimer = setTimeout(scheduleStatus, 2000 + Math.random() * 2000);
+	};
+
 	const enhanceForm: SubmitFunction = () => {
 		isLoading = true;
 		copyStatus = '';
@@ -77,6 +183,7 @@
 		verifyError = '';
 		verifyResult = '';
 		autoScrollEnabled = true;
+		startVerifyLoadingEffects();
 		dialogRef?.showModal();
 
 		try {
@@ -117,6 +224,9 @@
 					try {
 						const { text } = JSON.parse(payload) as { text?: string };
 						if (text) {
+							if (!verifyResult) {
+								stopVerifyLoadingEffects(true);
+							}
 							verifyResult += text;
 							if (autoScrollEnabled && !scheduledScroll) {
 								scheduledScroll = true;
@@ -138,6 +248,7 @@
 				error instanceof Error ? error.message : 'Unable to verify the transcript right now.';
 		} finally {
 			verifyLoading = false;
+			stopVerifyLoadingEffects(true);
 		}
 	};
 
@@ -263,7 +374,7 @@
 
 <dialog
 	bind:this={dialogRef}
-	class=" mt-4 h-full w-full max-w-none rounded-3xl border border-[#E2E8F0] bg-white p-0 text-left text-[#0F172A] shadow-[0_30px_60px_rgba(15,23,42,0.2)] backdrop:bg-black/40"
+	class=" mt-4 h-full w-full max-w-none rounded-3xl border border-[#E2E8F0] bg-white p-0 text-left text-[#0F172A] shadow-[0_30px_60px_rgba(15,23,42,0.2)] backdrop:bg-black/40 md:m-auto md:w-[80vh]"
 >
 	<div class="flex items-start justify-between gap-4 border-b border-[#E2E8F0] px-6 py-5">
 		<div>
@@ -286,12 +397,32 @@
 		onscroll={handleDialogScroll}
 	>
 		{#if verifyLoading && !verifyResult}
-			<div class="space-y-3 text-sm text-[#475569]">
+			<div class="space-y-4 text-sm text-[#475569]">
+				<div class="space-y-2">
+					<div
+						class="h-2 w-full overflow-hidden rounded-full bg-[#E2E8F0]"
+						role="progressbar"
+						aria-valuemin="0"
+						aria-valuemax="100"
+						aria-valuenow={Math.round(verifyProgress)}
+					>
+						<div
+							class="h-full rounded-full bg-[#1D4ED8] transition-[width] duration-500 ease-out"
+							style={`width: ${verifyProgress}%;`}
+						></div>
+					</div>
+					<div class="flex items-center justify-between text-xs font-semibold text-[#64748B]">
+						<span>Verification progress</span>
+						<span>{Math.round(verifyProgress)}%</span>
+					</div>
+				</div>
 				<div class="h-4 w-40 animate-pulse rounded-full bg-[#E2E8F0]"></div>
 				<div class="h-3 w-full animate-pulse rounded-full bg-[#E2E8F0]"></div>
 				<div class="h-3 w-11/12 animate-pulse rounded-full bg-[#E2E8F0]"></div>
 				<div class="h-3 w-10/12 animate-pulse rounded-full bg-[#E2E8F0]"></div>
-				<p class="text-sm font-semibold text-[#475569]">Verifying claims…</p>
+				<p class="text-sm font-semibold text-[#475569]">
+					{verifyStatusMessage + ' ...' || 'Verifying claims…'}
+				</p>
 			</div>
 		{:else if verifyResult}
 			<div
