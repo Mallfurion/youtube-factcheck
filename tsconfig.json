@@ -12,6 +12,14 @@
     "strict": true,
     "moduleResolution": "bundler"
   },
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.js",
+    "src/**/*.svelte",
+    "src/lib/youtube-transcript/src/**/*.ts",
+    ".svelte-kit/ambient.d.ts",
+    ".svelte-kit/types/**/*.d.ts"
+  ]
   // Path aliases are handled by https://svelte.dev/docs/kit/configuration#alias
   // except $lib which is handled by https://svelte.dev/docs/kit/configuration#files
   //

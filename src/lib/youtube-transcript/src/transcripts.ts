@@ -31,6 +31,41 @@ const PLAYABILITY_FAILED_REASON = {
 	VIDEO_UNAVAILABLE: 'This video is unavailable'
 } as const;
 
+type LanguageName = {
+	runs?: Array<{ text?: string }>;
+	simpleText?: string;
+};
+
+type TranslationLanguageRaw = {
+	languageName?: LanguageName;
+	languageCode?: string;
+};
+
+type CaptionTrackRaw = {
+	kind?: string;
+	languageCode?: string;
+	baseUrl?: string;
+	name?: LanguageName;
+	isTranslatable?: boolean;
+};
+
+type PlayabilityStatusData = {
+	status?: string;
+	reason?: string;
+	errorScreen?: {
+		playerErrorMessageRenderer?: {
+			subreason?: { runs?: Array<{ text?: string }> };
+		};
+	};
+};
+
+type InnertubeData = {
+	captions?: {
+		playerCaptionsTracklistRenderer?: Record<string, unknown>;
+	};
+	playabilityStatus?: PlayabilityStatusData;
+};
+
 export type FetchedTranscriptSnippet = {
 	text: string;
 	start: number;
@@ -205,10 +240,11 @@ export class TranscriptList {
 		videoId: string,
 		captionsJson: Record<string, unknown>
 	): TranscriptList {
-		const translationLanguagesRaw = Array.isArray(captionsJson.translationLanguages)
-			? (captionsJson.translationLanguages as TranslationLanguage[])
+		const translationLanguagesValue = captionsJson.translationLanguages;
+		const translationLanguagesRaw = Array.isArray(translationLanguagesValue)
+			? (translationLanguagesValue as TranslationLanguageRaw[])
 			: [];
-		const translationLanguages = translationLanguagesRaw.map((translationLanguage: any) => ({
+		const translationLanguages = translationLanguagesRaw.map((translationLanguage) => ({
 			language:
 				translationLanguage?.languageName?.runs?.[0]?.text ??
 				translationLanguage?.languageName?.simpleText ??
@@ -220,8 +256,9 @@ export class TranscriptList {
 		const manuallyCreatedTranscripts: Record<string, Transcript> = {};
 		const generatedTranscripts: Record<string, Transcript> = {};
 
-		const captionTracks = Array.isArray(captionsJson.captionTracks)
-			? (captionsJson.captionTracks as Array<Record<string, any>>)
+		const captionTracksValue = captionsJson.captionTracks;
+		const captionTracks = Array.isArray(captionTracksValue)
+			? (captionTracksValue as CaptionTrackRaw[])
 			: [];
 		if (!captionTracks.length) {
 			throw new TranscriptsDisabled(videoId);
@@ -229,12 +266,15 @@ export class TranscriptList {
 
 		for (const caption of captionTracks) {
 			const target = caption.kind === 'asr' ? generatedTranscripts : manuallyCreatedTranscripts;
-			target[caption.languageCode] = new Transcript({
+			target[caption.languageCode ?? 'unknown'] = new Transcript({
 				httpClient,
 				videoId,
-				url: String(caption.baseUrl).replace('&fmt=srv3', ''),
+				url: String(caption.baseUrl ?? '').replace('&fmt=srv3', ''),
 				language:
-					caption?.name?.runs?.[0]?.text ?? caption?.name?.simpleText ?? caption.languageCode,
+					caption?.name?.runs?.[0]?.text ??
+					caption?.name?.simpleText ??
+					caption.languageCode ??
+					'unknown',
 				languageCode: caption.languageCode ?? 'unknown',
 				isGenerated: caption.kind === 'asr',
 				translationLanguages: caption.isTranslatable ? translationLanguages : []
@@ -322,7 +362,10 @@ export class TranscriptListFetcher {
 		return TranscriptList.build(this._httpClient, videoId, captionsJson);
 	}
 
-	private async _fetchCaptionsJson(videoId: string, tryNumber = 0): Promise<Record<string, any>> {
+	private async _fetchCaptionsJson(
+		videoId: string,
+		tryNumber = 0
+	): Promise<Record<string, unknown>> {
 		try {
 			const html = await this._fetchVideoHtml(videoId);
 			const apiKey = this._extractInnertubeApiKey(html, videoId);
@@ -353,12 +396,13 @@ export class TranscriptListFetcher {
 	}
 
 	private _extractCaptionsJson(
-		innertubeData: Record<string, any>,
+		innertubeData: Record<string, unknown>,
 		videoId: string
-	): Record<string, any> {
-		this._assertPlayability(innertubeData.playabilityStatus || {}, videoId);
+	): Record<string, unknown> {
+		const typedInnertube = innertubeData as InnertubeData;
+		this._assertPlayability(typedInnertube.playabilityStatus || {}, videoId);
 
-		const captionsJson = innertubeData.captions?.playerCaptionsTracklistRenderer;
+		const captionsJson = typedInnertube.captions?.playerCaptionsTracklistRenderer;
 		if (!captionsJson || !captionsJson.captionTracks) {
 			throw new TranscriptsDisabled(videoId);
 		}
@@ -366,10 +410,11 @@ export class TranscriptListFetcher {
 		return captionsJson;
 	}
 
-	private _assertPlayability(playabilityStatusData: Record<string, any>, videoId: string): void {
-		const playabilityStatus = playabilityStatusData.status;
+	private _assertPlayability(playabilityStatusData: Record<string, unknown>, videoId: string): void {
+		const typedPlayability = playabilityStatusData as PlayabilityStatusData;
+		const playabilityStatus = typedPlayability.status;
 		if (playabilityStatus && playabilityStatus !== PLAYABILITY_STATUS.OK) {
-			const reason = playabilityStatusData.reason;
+			const reason = typedPlayability.reason;
 			if (playabilityStatus === PLAYABILITY_STATUS.LOGIN_REQUIRED) {
 				if (reason === PLAYABILITY_FAILED_REASON.BOT_DETECTED) {
 					throw new RequestBlocked(videoId);
@@ -389,11 +434,11 @@ export class TranscriptListFetcher {
 			}
 
 			const subreasons =
-				playabilityStatusData.errorScreen?.playerErrorMessageRenderer?.subreason?.runs || [];
+				typedPlayability.errorScreen?.playerErrorMessageRenderer?.subreason?.runs || [];
 			throw new VideoUnplayable(
 				videoId,
 				reason ?? null,
-				subreasons.map((run: { text?: string }) => run.text || '')
+				subreasons.map((run) => run.text || '')
 			);
 		}
 	}
@@ -429,7 +474,10 @@ export class TranscriptListFetcher {
 		return decodeHtml(text);
 	}
 
-	private async _fetchInnertubeData(videoId: string, apiKey: string): Promise<Record<string, any>> {
+	private async _fetchInnertubeData(
+		videoId: string,
+		apiKey: string
+	): Promise<Record<string, unknown>> {
 		const response = await this._httpClient.post(INNERTUBE_API_URL.replace('{api_key}', apiKey), {
 			headers: {
 				'Content-Type': 'application/json'

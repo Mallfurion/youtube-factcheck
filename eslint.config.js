@@ -37,5 +37,14 @@ export default defineConfig(
 				svelteConfig
 			}
 		}
+	},
+	{
+		files: ['src/lib/youtube-transcript/src/**/*.ts'],
+		languageOptions: {
+			parserOptions: {
+				projectService: true,
+				parser: ts.parser
+			}
+		}
 	}
 );

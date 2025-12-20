@@ -2,10 +2,12 @@ import type { FetchedTranscript, FetchedTranscriptSnippet } from './transcripts'
 
 export class Formatter {
 	formatTranscript(_transcript: FetchedTranscript): string {
+		void _transcript;
 		throw new Error('A subclass of Formatter must implement their own .formatTranscript() method.');
 	}
 
 	formatTranscripts(_transcripts: FetchedTranscript[]): string {
+		void _transcripts;
 		throw new Error(
 			'A subclass of Formatter must implement their own .formatTranscripts() method.'
 		);
