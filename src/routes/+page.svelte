@@ -23,6 +23,7 @@
 		open: () => void;
 		close: () => void;
 	};
+	const TITLE_BLINK_INTERVAL_MS = 2000;
 
 	let url = $state('');
 	let isLoading = $state(false);
@@ -37,8 +38,12 @@
 	let verifyStatusMessage = $state('');
 	let verifyProgressTimer: ReturnType<typeof setTimeout> | null = null;
 	let verifyStatusTimer: ReturnType<typeof setTimeout> | null = null;
+	let titleBlinkTimer: ReturnType<typeof setInterval> | null = null;
 	let isDark = $state(false);
 	let themeInitialized = $state(false);
+	let titleAlertMode = $state<'idle' | 'loading' | 'completed'>('idle');
+	let titleAlertVisible = $state(false);
+	let titleAlertDismissed = $state(false);
 
 	const verifyStatusMessages = [
 		'Parsing transcript segments',
@@ -122,6 +127,43 @@
 
 	const getStatusMessages = () =>
 		modelTask === 'summary' ? summaryStatusMessages : verifyStatusMessages;
+
+	const basePageTitle = 'YouTube Transcript Fact-Checker & Summarizer';
+	const activeTaskLabel = $derived(modelTask === 'summary' ? 'summary' : 'fact-check');
+	const titleAlertText = $derived(
+		titleAlertMode === 'loading'
+			? `(1) ${activeTaskLabel} loading ...`
+			: titleAlertMode === 'completed'
+				? `(1) ${activeTaskLabel} completed!`
+				: ''
+	);
+	const pageTitle = $derived(
+		titleAlertMode === 'idle' ? basePageTitle : titleAlertVisible ? titleAlertText : basePageTitle
+	);
+
+	$effect(() => {
+		if (titleBlinkTimer) {
+			clearInterval(titleBlinkTimer);
+			titleBlinkTimer = null;
+		}
+
+		if (titleAlertMode === 'idle') {
+			titleAlertVisible = false;
+			return;
+		}
+
+		titleAlertVisible = true;
+		titleBlinkTimer = setInterval(() => {
+			titleAlertVisible = !titleAlertVisible;
+		}, TITLE_BLINK_INTERVAL_MS);
+
+		return () => {
+			if (titleBlinkTimer) {
+				clearInterval(titleBlinkTimer);
+				titleBlinkTimer = null;
+			}
+		};
+	});
 
 	const pickRandomStatusMessage = (current: string) => {
 		const statusMessages = getStatusMessages();
@@ -229,6 +271,8 @@
 		if (!transcript || verifyLoading) return;
 		modelTask = task;
 		verifyLoading = true;
+		titleAlertDismissed = false;
+		titleAlertMode = 'loading';
 		verifyError = '';
 		verifyResult = '';
 		const historyUrl = sourceUrl.trim();
@@ -311,6 +355,11 @@
 				} else {
 					toast.error(`${actionLabel} completed, but it could not be saved to history.`);
 				}
+				if (!titleAlertDismissed) {
+					titleAlertMode = 'completed';
+				}
+			} else {
+				titleAlertMode = 'idle';
 			}
 			verifyLoading = false;
 			stopVerifyLoadingEffects(true);
@@ -324,10 +373,15 @@
 	const handleSummary = async () => {
 		await handleModelRequest('summary');
 	};
+
+	const handleReportDialogClose = () => {
+		titleAlertDismissed = true;
+		titleAlertMode = 'idle';
+	};
 </script>
 
 <svelte:head>
-	<title>YouTube Transcript Fact-Checker & Summarizer</title>
+	<title>{pageTitle}</title>
 	<meta
 		name="description"
 		content="Paste a YouTube URL to extract its transcript, then generate an AI summary or fact-check report in seconds."
@@ -500,4 +554,5 @@
 	result={verifyResult}
 	error={verifyError}
 	{sanitizeMarkdown}
+	onDialogClose={handleReportDialogClose}
 />

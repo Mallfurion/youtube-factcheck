@@ -8,7 +8,8 @@
 		statusMessage = '',
 		result = '',
 		error = '',
-		sanitizeMarkdown = null
+		sanitizeMarkdown = null,
+		onDialogClose = null
 	} = $props<{
 		task?: ModelTask;
 		loading?: boolean;
@@ -17,6 +18,7 @@
 		result?: string;
 		error?: string;
 		sanitizeMarkdown?: ((input: string) => string) | null;
+		onDialogClose?: (() => void) | null;
 	}>();
 
 	let dialogRef = $state<HTMLDialogElement | null>(null);
@@ -53,6 +55,10 @@
 		autoScrollEnabled = scrollHeight - scrollTop - clientHeight < 24;
 	};
 
+	const handleDialogClose = () => {
+		onDialogClose?.();
+	};
+
 	$effect(() => {
 		if (!loading || result) return;
 		autoScrollEnabled = true;
@@ -76,13 +82,14 @@
 
 <dialog
 	bind:this={dialogRef}
+	onclose={handleDialogClose}
 	class="mt-4 h-full w-full max-w-none rounded-3xl border border-[#E2E8F0] bg-white p-0 text-left text-[#0F172A] shadow-[0_30px_60px_rgba(15,23,42,0.2)] backdrop:bg-black/40 md:m-auto md:w-[80vh] dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100 dark:shadow-[0_30px_70px_rgba(0,0,0,0.6)]"
 >
 	<div
 		class="flex items-start justify-between gap-4 border-b border-[#E2E8F0] px-6 py-5 dark:border-slate-800"
 	>
 		<div>
-			<p class="text-secondary text-xs font-semibold tracking-[0.24em] uppercase">
+			<p class="text-xs font-semibold tracking-[0.24em] text-secondary uppercase">
 				{task === 'summary' ? 'Summary report' : 'Verification report'}
 			</p>
 			<h3 class="text-xl font-semibold">
@@ -103,7 +110,7 @@
 		onscroll={handleDialogScroll}
 	>
 		{#if loading && !result}
-			<div class="text-secondary space-y-4 text-sm">
+			<div class="space-y-4 text-sm text-secondary">
 				<div class="space-y-2">
 					<div
 						class="h-2 w-full overflow-hidden rounded-full bg-[#E2E8F0] dark:bg-slate-800"
@@ -113,7 +120,7 @@
 						aria-valuenow={Math.round(progress)}
 					>
 						<div
-							class="bg-primary h-full rounded-full transition-[width] duration-500 ease-out"
+							class="h-full rounded-full bg-primary transition-[width] duration-500 ease-out"
 							style={`width: ${progress}%;`}
 						></div>
 					</div>
@@ -126,7 +133,7 @@
 				<div class="h-3 w-full animate-pulse rounded-full bg-[#E2E8F0] dark:bg-slate-800"></div>
 				<div class="h-3 w-11/12 animate-pulse rounded-full bg-[#E2E8F0] dark:bg-slate-800"></div>
 				<div class="h-3 w-10/12 animate-pulse rounded-full bg-[#E2E8F0] dark:bg-slate-800"></div>
-				<p class="text-secondary text-sm font-semibold">
+				<p class="text-sm font-semibold text-secondary">
 					{statusMessage
 						? `${statusMessage} ...`
 						: task === 'summary'
@@ -137,7 +144,7 @@
 		{:else if result}
 			{#if sanitizeMarkdown}
 				<div
-					class="[&_a]:text-primary [&_blockquote]:text-secondary space-y-3 text-sm leading-relaxed text-[#0F172A] dark:text-slate-100 [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-black/20 [&_blockquote]:pl-3 dark:[&_blockquote]:border-white/10 dark:[&_blockquote]:text-slate-300 [&_code]:rounded [&_code]:bg-black/5 [&_code]:px-1 [&_code]:py-0.5 dark:[&_code]:bg-white/10 [&_h1]:text-2xl [&_h1]:font-semibold [&_h1]:tracking-tight [&_h2]:text-xl [&_h2]:font-semibold [&_h2]:tracking-tight [&_h3]:text-lg [&_h3]:font-semibold [&_h3]:tracking-tight [&_ol]:list-decimal [&_ol]:pl-5 [&_ul]:list-disc [&_ul]:pl-5"
+					class="space-y-3 text-sm leading-relaxed text-[#0F172A] dark:text-slate-100 [&_a]:text-primary [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-black/20 [&_blockquote]:pl-3 [&_blockquote]:text-secondary dark:[&_blockquote]:border-white/10 dark:[&_blockquote]:text-slate-300 [&_code]:rounded [&_code]:bg-black/5 [&_code]:px-1 [&_code]:py-0.5 dark:[&_code]:bg-white/10 [&_h1]:text-2xl [&_h1]:font-semibold [&_h1]:tracking-tight [&_h2]:text-xl [&_h2]:font-semibold [&_h2]:tracking-tight [&_h3]:text-lg [&_h3]:font-semibold [&_h3]:tracking-tight [&_ol]:list-decimal [&_ol]:pl-5 [&_ul]:list-disc [&_ul]:pl-5"
 					use:renderMarkdown={reportHtml}
 				></div>
 			{:else}
@@ -147,7 +154,7 @@
 		{:else if error}
 			<p class="text-sm font-semibold text-[#b3362f] dark:text-red-400">{error}</p>
 		{:else}
-			<p class="text-secondary text-sm">
+			<p class="text-sm text-secondary">
 				{task === 'summary' ? 'No summary response yet.' : 'No verification response yet.'}
 			</p>
 		{/if}
