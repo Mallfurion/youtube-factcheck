@@ -1,4 +1,4 @@
-# YouTube Factcheck
+# YouTube Factcheck 🎥✅
 
 ![App screenshot](app-image.png)
 
@@ -6,17 +6,17 @@
 
 A SvelteKit app that:
 
-- extracts a YouTube transcript from a video URL,
-- lets you copy/read the raw transcript,
-- streams an AI-generated fact-check report or summary for that transcript.
+- 📜 extracts a YouTube transcript from a video URL,
+- 📋 lets you copy/read the raw transcript,
+- 🤖 streams an AI-generated fact-check report or summary for that transcript.
 
-## Requirements
+## 🧰 Requirements
 
 - Node.js 20+ recommended
 - npm/yarn/pnpm
 - A valid Google AI API key for Gemini
 
-## Setup
+## ⚙️ Setup
 
 1. Install dependencies:
 
@@ -30,7 +30,7 @@ npm install
 GOOGLE_AI_API_KEY="your_key_here"
 ```
 
-You can generate a Google Gemini API key here: `https://aistudio.google.com/app/apikey`.
+You can generate a Google Gemini API key here: [https://aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey).
 
 Optional variables:
 
@@ -50,7 +50,7 @@ Possible `GOOGLE_AI_MODEL` values:
 - `gemini-1.5-flash`
 - `gemini-1.5-pro`
 
-## Run Locally
+## ▶️ Run Locally
 
 ```bash
 npm run dev
@@ -58,7 +58,7 @@ npm run dev
 
 Open the app at `http://localhost:5173`.
 
-## Proxy Rotation & Proxy Warm (WIP)
+## 🔁 Proxy Rotation & Proxy Warm (WIP)
 
 ```bash
 # Warm-proxy endpoint auth and script URL
@@ -73,7 +73,7 @@ PROXY_ROTATION_CACHE_DIR=""
 PROXY_LIST_WRITE_ENABLED="false"
 ```
 
-## Stack
+## 🧱 Stack
 
 - SvelteKit 2 + Svelte 5
 - Vite 7
@@ -82,7 +82,7 @@ PROXY_LIST_WRITE_ENABLED="false"
 - Local transcript/proxy libraries under `src/lib/`
 - Netlify adapter (`@sveltejs/adapter-netlify`)
 
-## How It Works
+## 🔍 How It Works
 
 1. User pastes a YouTube URL and submits.
 2. Server extracts video ID from supported URL formats (`watch`, `youtu.be`, `shorts`, `embed`, `live`).
@@ -92,7 +92,7 @@ PROXY_LIST_WRITE_ENABLED="false"
 6. The selected API route streams AI output over `text/event-stream`.
 7. UI renders the streamed Markdown safely.
 
-## Scripts
+## 📜 Scripts
 
 - `npm run dev`: start dev server
 - `npm run build`: production build
@@ -103,27 +103,27 @@ PROXY_LIST_WRITE_ENABLED="false"
 - `npm run proxy:warm`: call `/api/warm-proxy`
 - `npm run proxy:generate`: call `/api/warm-proxy?writeList=true`
 
-## API Endpoints
+## 🌐 API Endpoints
 
-### `POST /api/verify`
+### ✅ `POST /api/verify`
 
 - Body: `{ "transcript": "..." }`
 - Response: `text/event-stream` with `data: {"text":"..."}` chunks
 - Purpose: fact-check style report from transcript text
 
-### `POST /api/summary`
+### 📝 `POST /api/summary`
 
 - Body: `{ "transcript": "..." }`
 - Response: `text/event-stream` with `data: {"text":"..."}` chunks
 - Purpose: concise summary report from transcript text
 
-### `GET|POST /api/warm-proxy`
+### 🔥 `GET|POST /api/warm-proxy`
 
 - Optional auth header: `Authorization: Bearer <PROXY_WARM_SECRET>`
 - Optional query: `?writeList=true` (writes proxy list only when allowed)
 - Purpose: refresh proxy cache for rotation subsystem
 
-## Netlify Deployment Notes
+## 🚀 Netlify Deployment Notes
 
 - Project uses `@sveltejs/adapter-netlify` in `svelte.config.js`.
 - `netlify.toml` enables a local plugin at `netlify/plugins/warm-proxy`.
@@ -132,7 +132,7 @@ PROXY_LIST_WRITE_ENABLED="false"
   - `DEPLOY_PRIME_URL`, or
   - `URL`.
 
-## Usage
+## 🧭 Usage
 
 1. Start the app with `npm run dev`.
 2. Paste a YouTube video URL into the form.
@@ -140,13 +140,13 @@ PROXY_LIST_WRITE_ENABLED="false"
 4. Click `Verify` for fact-check output or `Summary` for condensed output.
 5. Review streamed results in the modal dialog.
 
-## Important Limitations
+## ⚠️ Important Limitations
 
 - Transcript extraction only works when captions exist and are retrievable.
 - Some videos fail due to age restrictions, region restrictions, or YouTube anti-bot/IP blocking.
 - AI output can be wrong or incomplete; treat it as assistance, not final truth.
 
-## Security
+## 🔒 Security
 
 - Keep `.env` secrets out of version control.
 - Do not expose `GOOGLE_AI_API_KEY` in client-side code.
