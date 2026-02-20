@@ -53,6 +53,8 @@ npm install
 GOOGLE_AI_API_KEY="your_key_here"
 ```
 
+You can generate a Google Gemini API key here: `https://aistudio.google.com/app/apikey`.
+
 Optional variables:
 
 ```bash
