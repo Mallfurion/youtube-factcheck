@@ -309,6 +309,14 @@
 	};
 </script>
 
+<svelte:head>
+	<title>YouTube Transcript Fact-Checker & Summarizer</title>
+	<meta
+		name="description"
+		content="Paste a YouTube URL to extract its transcript, then generate an AI summary or fact-check report in seconds."
+	/>
+</svelte:head>
+
 <main
 	class="min-h-screen bg-blue-100 bg-size-[200%_200%] px-6 pt-6 pb-4 text-[#0F172A] sm:px-10 md:pb-10 lg:px-20 dark:bg-slate-950 dark:text-slate-100"
 >
@@ -332,16 +340,16 @@
 	<section class="mt-4 grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
 		<div class="md:space-y-4">
 			<p class="text-secondary text-[0.7rem] font-semibold tracking-[0.24em] uppercase">
-				YouTube Fact Checker
+				YouTube Transcript Analyzer
 			</p>
 			<h1
 				class="hidden text-4xl leading-tight font-semibold text-[#0F172A] sm:text-5xl md:flex dark:text-slate-100"
 			>
-				Lift the transcript, audit the claims.
+				Extract the transcript, then summarize or fact-check it.
 			</h1>
 			<p class="text-secondary hidden max-w-2xl text-lg leading-relaxed md:flex">
-				Drop a YouTube link and pull down the full transcript so you can copy, annotate, and verify
-				the facts fast.
+				Paste any YouTube URL to pull captions and turn the transcript into a quick summary or a
+				detailed claim verification report.
 			</p>
 		</div>
 		<form
