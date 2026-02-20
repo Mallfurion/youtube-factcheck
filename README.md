@@ -1,37 +1,14 @@
 # YouTube Factcheck
 
+![App screenshot](app-image.png)
+
+---
+
 A SvelteKit app that:
+
 - extracts a YouTube transcript from a video URL,
 - lets you copy/read the raw transcript,
 - streams an AI-generated fact-check report or summary for that transcript.
-
-## What This Repository Does
-
-The app has 3 main backend flows:
-- `src/routes/+page.server.ts`: validates a YouTube URL, extracts the video ID, fetches captions/transcript text, and returns it to the page.
-- `src/routes/api/verify/+server.ts`: sends transcript text to Google Gemini with a fact-check oriented system instruction and streams Markdown chunks back.
-- `src/routes/api/summary/+server.ts`: sends transcript text to Gemini with a summary-oriented prompt and streams Markdown chunks back.
-
-The frontend (`src/routes/+page.svelte`) submits a form for transcript retrieval, then calls `/api/verify` or `/api/summary`, progressively renders streamed Markdown, and sanitizes it with `DOMPurify`.
-
-## Stack
-
-- SvelteKit 2 + Svelte 5
-- Vite 7
-- Tailwind CSS 4
-- `@google/generative-ai` (Gemini API)
-- Local transcript/proxy libraries under `src/lib/`
-- Netlify adapter (`@sveltejs/adapter-netlify`)
-
-## How It Works
-
-1. User pastes a YouTube URL and submits.
-2. Server extracts video ID from supported URL formats (`watch`, `youtu.be`, `shorts`, `embed`, `live`).
-3. Transcript fetcher requests YouTube watch/innertube endpoints and parses caption tracks/snippets.
-4. Transcript text is shown in the UI and can be copied.
-5. User clicks `Verify` or `Summary`.
-6. The selected API route streams AI output over `text/event-stream`.
-7. UI renders the streamed Markdown safely.
 
 ## Requirements
 
@@ -62,7 +39,28 @@ Optional variables:
 GOOGLE_AI_MODEL="gemini-2.5-flash"
 ENABLE_SHORT_VERIFICATION="true"
 TRANSCRIPT_DEBUG="false"
+```
 
+Possible `GOOGLE_AI_MODEL` values:
+
+- `gemini-2.5-flash` (default)
+- `gemini-2.5-pro`
+- `gemini-2.0-flash`
+- `gemini-2.0-flash-lite`
+- `gemini-1.5-flash`
+- `gemini-1.5-pro`
+
+## Run Locally
+
+```bash
+npm run dev
+```
+
+Open the app at `http://localhost:5173`.
+
+## Proxy Rotation & Proxy Warm (WIP)
+
+```bash
 # Warm-proxy endpoint auth and script URL
 PROXY_WARM_SECRET=""
 PROXY_WARM_URL="http://localhost:5173/api/warm-proxy"
@@ -75,15 +73,24 @@ PROXY_ROTATION_CACHE_DIR=""
 PROXY_LIST_WRITE_ENABLED="false"
 ```
 
-Note: `WEBSHARE_PROXY_USERNAME` and `WEBSHARE_PROXY_PASSWORD` are not currently read by this app's runtime code.
+## Stack
 
-## Run Locally
+- SvelteKit 2 + Svelte 5
+- Vite 7
+- Tailwind CSS 4
+- `@google/generative-ai` (Gemini API)
+- Local transcript/proxy libraries under `src/lib/`
+- Netlify adapter (`@sveltejs/adapter-netlify`)
 
-```bash
-npm run dev
-```
+## How It Works
 
-Open the app at `http://localhost:5173`.
+1. User pastes a YouTube URL and submits.
+2. Server extracts video ID from supported URL formats (`watch`, `youtu.be`, `shorts`, `embed`, `live`).
+3. Transcript fetcher requests YouTube watch/innertube endpoints and parses caption tracks/snippets.
+4. Transcript text is shown in the UI and can be copied.
+5. User clicks `Verify` or `Summary`.
+6. The selected API route streams AI output over `text/event-stream`.
+7. UI renders the streamed Markdown safely.
 
 ## Scripts
 
@@ -124,17 +131,6 @@ Open the app at `http://localhost:5173`.
   - `PROXY_WARM_URL`, or
   - `DEPLOY_PRIME_URL`, or
   - `URL`.
-
-## Project Structure
-
-- `src/routes/+page.svelte`: UI and streamed rendering
-- `src/routes/+page.server.ts`: transcript fetch action
-- `src/routes/api/verify/+server.ts`: fact-check streaming API
-- `src/routes/api/summary/+server.ts`: summary streaming API
-- `src/routes/api/warm-proxy/+server.ts`: proxy cache warm API
-- `src/lib/youtube-transcript/src/*`: in-repo transcript fetch/parsing logic
-- `src/lib/proxy-rotation/src/*`: in-repo proxy rotation/cache providers
-- `scripts/warm-proxy.js`: CLI utility for warm endpoint
 
 ## Usage
 
