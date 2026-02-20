@@ -18,6 +18,7 @@
 	let verifyLoading = $state(false);
 	let verifyError = $state('');
 	let verifyResult = $state('');
+	let modelTask = $state<'verify' | 'summary'>('verify');
 	let dialogRef = $state<HTMLDialogElement | null>(null);
 	let dialogBodyRef = $state<HTMLDivElement | null>(null);
 	let sanitizeMarkdown = $state<((input: string) => string) | null>(null);
@@ -50,6 +51,19 @@
 		'Reconciling overlapping claims',
 		'Preparing citation-ready notes',
 		'Drafting verification summary'
+	];
+
+	const summaryStatusMessages = [
+		'Reading transcript structure',
+		'Identifying core topics',
+		'Tracking speaker intent',
+		'Extracting key arguments',
+		'Grouping related ideas',
+		'Highlighting major conclusions',
+		'Filtering repeated points',
+		'Building concise overview',
+		'Drafting short summary',
+		'Selecting top takeaways'
 	];
 
 	onMount(async () => {
@@ -95,12 +109,16 @@
 	const words = $derived(transcript ? transcript.trim().split(/\s+/).filter(Boolean).length : 0);
 	const lines = $derived(transcript ? transcript.split('\n').length : 0);
 
+	const getStatusMessages = () =>
+		modelTask === 'summary' ? summaryStatusMessages : verifyStatusMessages;
+
 	const pickRandomStatusMessage = (current: string) => {
-		if (!verifyStatusMessages.length) return '';
-		if (verifyStatusMessages.length === 1) return verifyStatusMessages[0];
+		const statusMessages = getStatusMessages();
+		if (!statusMessages.length) return '';
+		if (statusMessages.length === 1) return statusMessages[0];
 		let next = current;
 		while (next === current) {
-			next = verifyStatusMessages[Math.floor(Math.random() * verifyStatusMessages.length)];
+			next = statusMessages[Math.floor(Math.random() * statusMessages.length)];
 		}
 		return next;
 	};
@@ -151,13 +169,15 @@
 			verifyProgress = Math.min(99, verifyProgress + chunkSizes[chunkIndex]);
 			if (verifyProgress >= 99) {
 				verifyProgress = 99;
-				verifyStatusMessage = 'Summarizing findings ...';
+				verifyStatusMessage =
+					modelTask === 'summary' ? 'Finalizing summary ...' : 'Summarizing findings ...';
 				return;
 			}
 			chunkIndex += 1;
 			if (chunkIndex >= chunkSizes.length) {
 				verifyProgress = 99;
-				verifyStatusMessage = 'Summarizing findings ...';
+				verifyStatusMessage =
+					modelTask === 'summary' ? 'Finalizing summary ...' : 'Summarizing findings ...';
 				return;
 			}
 			verifyProgressTimer = setTimeout(step, chunkDurations[chunkIndex]);
@@ -193,17 +213,24 @@
 		}, 2000);
 	};
 
-	const handleVerify = async () => {
+	const handleModelRequest = async (task: 'verify' | 'summary') => {
 		if (!transcript || verifyLoading) return;
+		modelTask = task;
 		verifyLoading = true;
 		verifyError = '';
 		verifyResult = '';
 		autoScrollEnabled = true;
 		startVerifyLoadingEffects();
 		dialogRef?.showModal();
+		const genericError =
+			task === 'summary'
+				? 'Unable to summarize the transcript right now.'
+				: 'Unable to verify the transcript right now.';
 
 		try {
-			const response = await fetch('/api/verify', {
+			const endpoint = task === 'summary' ? '/api/summary' : '/api/verify';
+
+			const response = await fetch(endpoint, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ transcript })
@@ -211,7 +238,7 @@
 
 			if (!response.ok) {
 				const errorText = await response.text();
-				verifyError = errorText || 'Unable to verify the transcript right now.';
+				verifyError = errorText || genericError;
 				return;
 			}
 
@@ -260,12 +287,19 @@
 				}
 			}
 		} catch (error) {
-			verifyError =
-				error instanceof Error ? error.message : 'Unable to verify the transcript right now.';
+			verifyError = error instanceof Error ? error.message : genericError;
 		} finally {
 			verifyLoading = false;
 			stopVerifyLoadingEffects(true);
 		}
+	};
+
+	const handleVerify = async () => {
+		await handleModelRequest('verify');
+	};
+
+	const handleSummary = async () => {
+		await handleModelRequest('summary');
 	};
 
 	const handleDialogScroll = () => {
@@ -276,7 +310,7 @@
 </script>
 
 <main
-	class="min-h-screen bg-blue-100 bg-size-[200%_200%] px-6 pb-4 pt-6 text-[#0F172A] sm:px-10 md:pb-10 lg:px-20 dark:bg-slate-950 dark:text-slate-100"
+	class="min-h-screen bg-blue-100 bg-size-[200%_200%] px-6 pt-6 pb-4 text-[#0F172A] sm:px-10 md:pb-10 lg:px-20 dark:bg-slate-950 dark:text-slate-100"
 >
 	<div class="flex items-center justify-end">
 		<button
@@ -288,7 +322,7 @@
 		>
 			<span class="sr-only">Toggle dark mode</span>
 			<span
-				class="inline-flex h-6 w-6 items-center justify-center rounded-full bg-primary text-[0.6rem] font-semibold text-white transition-transform duration-300 dark:text-slate-900"
+				class="bg-primary inline-flex h-6 w-6 items-center justify-center rounded-full text-[0.6rem] font-semibold text-white transition-transform duration-300 dark:text-slate-900"
 				class:translate-x-7={isDark}
 			>
 				{isDark ? 'D' : 'L'}
@@ -297,13 +331,15 @@
 	</div>
 	<section class="mt-4 grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
 		<div class="md:space-y-4">
-			<p class="text-[0.7rem] font-semibold tracking-[0.24em] text-secondary uppercase">
+			<p class="text-secondary text-[0.7rem] font-semibold tracking-[0.24em] uppercase">
 				YouTube Fact Checker
 			</p>
-			<h1 class="hidden text-4xl leading-tight font-semibold text-[#0F172A] sm:text-5xl md:flex dark:text-slate-100">
+			<h1
+				class="hidden text-4xl leading-tight font-semibold text-[#0F172A] sm:text-5xl md:flex dark:text-slate-100"
+			>
 				Lift the transcript, audit the claims.
 			</h1>
-			<p class="hidden max-w-2xl text-lg leading-relaxed text-secondary md:flex">
+			<p class="text-secondary hidden max-w-2xl text-lg leading-relaxed md:flex">
 				Drop a YouTube link and pull down the full transcript so you can copy, annotate, and verify
 				the facts fast.
 			</p>
@@ -326,15 +362,13 @@
 			</label>
 			<div class="grid gap-2">
 				<button
-					class="rounded-full bg-primary px-6 py-3 text-base font-semibold text-white transition hover:-translate-y-0.5 hover:shadow-[0_12px_24px_rgba(29,78,216,0.25)] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0 disabled:hover:shadow-none dark:text-slate-950 dark:hover:shadow-[0_12px_24px_rgba(56,189,248,0.35)]"
+					class="bg-primary rounded-full px-6 py-3 text-base font-semibold text-white transition hover:-translate-y-0.5 hover:shadow-[0_12px_24px_rgba(29,78,216,0.25)] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0 disabled:hover:shadow-none dark:text-slate-950 dark:hover:shadow-[0_12px_24px_rgba(56,189,248,0.35)]"
 					type="submit"
 					disabled={isLoading}
 				>
 					{isLoading ? 'Fetching transcript…' : 'Get transcript'}
 				</button>
-				<p class="text-sm text-secondary">
-					Captions must be enabled for the video.
-				</p>
+				<p class="text-secondary text-sm">Captions must be enabled for the video.</p>
 			</div>
 			{#if error}
 				<p class="text-sm font-semibold text-[#b3362f] dark:text-red-400">{error}</p>
@@ -346,7 +380,7 @@
 		class="mt-4 rounded-[1.6rem] border border-[#E2E8F0] bg-white p-6 shadow-[0_30px_50px_rgba(15,23,42,0.08)] dark:border-slate-800 dark:bg-slate-900 dark:shadow-[0_30px_60px_rgba(15,23,42,0.45)]"
 	>
 		<header class="flex flex-wrap items-center justify-between gap-4">
-			<div class="mt-4 flex w-full justify-between">
+			<div class="mt-4 flex w-full items-center justify-between gap-3">
 				<button
 					class="rounded-full border border-[#E2E8F0] px-4 py-2 text-sm font-semibold text-[#0F172A] transition hover:bg-[#E2E8F0] disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:text-slate-100 dark:hover:bg-slate-800"
 					type="button"
@@ -355,17 +389,28 @@
 				>
 					Copy transcript
 				</button>
-				<button
-					class="rounded-full bg-primary px-5 py-2 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:shadow-[0_10px_20px_rgba(29,78,216,0.25)] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0 disabled:hover:shadow-none dark:text-slate-950 dark:hover:shadow-[0_12px_24px_rgba(56,189,248,0.3)]"
-					type="button"
-					onclick={handleVerify}
-					disabled={!transcript || verifyLoading}
-				>
-					{verifyLoading ? 'Verifying…' : 'Verify'}
-				</button>
+
+				<div class="flex items-center gap-2">
+					<button
+						class="bg-primary rounded-full px-5 py-2 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:shadow-[0_10px_20px_rgba(29,78,216,0.25)] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0 disabled:hover:shadow-none dark:text-slate-950 dark:hover:shadow-[0_12px_24px_rgba(56,189,248,0.3)]"
+						type="button"
+						onclick={handleVerify}
+						disabled={!transcript || verifyLoading}
+					>
+						{verifyLoading && modelTask === 'verify' ? 'Verifying…' : 'Verify'}
+					</button>
+					<button
+						class="bg-primary/20 text-primary border-primary/30 hover:bg-primary/30 dark:border-primary/35 dark:bg-primary/25 dark:hover:bg-primary/35 rounded-full border px-5 py-2 text-sm font-semibold transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0 dark:text-slate-100"
+						type="button"
+						onclick={handleSummary}
+						disabled={!transcript || verifyLoading}
+					>
+						{verifyLoading && modelTask === 'summary' ? 'Summarizing…' : 'Summary'}
+					</button>
+				</div>
 
 				{#if copyStatus}
-					<span class="absolute top-2 right-2 animate-bounce text-sm font-semibold text-primary"
+					<span class="text-primary absolute top-2 right-2 animate-bounce text-sm font-semibold"
 						>{copyStatus}</span
 					>
 				{/if}
@@ -381,7 +426,7 @@
 					{transcript}
 				</pre>
 			{:else}
-				<div class="space-y-3 text-sm leading-relaxed text-secondary">
+				<div class="text-secondary space-y-3 text-sm leading-relaxed">
 					<p>No transcript yet. Paste a link to start pulling captions.</p>
 					<ul class="list-disc space-y-1 pl-5">
 						<li>Supports watch, short, and embed links.</li>
@@ -392,7 +437,7 @@
 		</div>
 		<div>
 			<h2 class="text-lg font-semibold">Transcript output</h2>
-			<p class="mt-1 text-sm text-secondary">
+			<p class="text-secondary mt-1 text-sm">
 				{#if transcript}
 					{words} words · {lines} lines
 				{:else}
@@ -411,12 +456,16 @@
 	bind:this={dialogRef}
 	class=" mt-4 h-full w-full max-w-none rounded-3xl border border-[#E2E8F0] bg-white p-0 text-left text-[#0F172A] shadow-[0_30px_60px_rgba(15,23,42,0.2)] backdrop:bg-black/40 md:m-auto md:w-[80vh] dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100 dark:shadow-[0_30px_70px_rgba(0,0,0,0.6)]"
 >
-	<div class="flex items-start justify-between gap-4 border-b border-[#E2E8F0] px-6 py-5 dark:border-slate-800">
+	<div
+		class="flex items-start justify-between gap-4 border-b border-[#E2E8F0] px-6 py-5 dark:border-slate-800"
+	>
 		<div>
-			<p class="text-xs font-semibold tracking-[0.24em] text-secondary uppercase">
-				Verification report
+			<p class="text-secondary text-xs font-semibold tracking-[0.24em] uppercase">
+				{modelTask === 'summary' ? 'Summary report' : 'Verification report'}
 			</p>
-			<h3 class="text-xl font-semibold">Fact check summary</h3>
+			<h3 class="text-xl font-semibold">
+				{modelTask === 'summary' ? 'Video summary' : 'Fact check summary'}
+			</h3>
 		</div>
 		<button
 			class="rounded-full border border-[#E2E8F0] px-3 py-1 text-sm font-semibold text-[#0F172A] transition hover:bg-[#E2E8F0] dark:border-slate-700 dark:text-slate-100 dark:hover:bg-slate-800"
@@ -432,7 +481,7 @@
 		onscroll={handleDialogScroll}
 	>
 		{#if verifyLoading && !verifyResult}
-			<div class="space-y-4 text-sm text-secondary">
+			<div class="text-secondary space-y-4 text-sm">
 				<div class="space-y-2">
 					<div
 						class="h-2 w-full overflow-hidden rounded-full bg-[#E2E8F0] dark:bg-slate-800"
@@ -442,12 +491,12 @@
 						aria-valuenow={Math.round(verifyProgress)}
 					>
 						<div
-							class="h-full rounded-full bg-primary transition-[width] duration-500 ease-out"
+							class="bg-primary h-full rounded-full transition-[width] duration-500 ease-out"
 							style={`width: ${verifyProgress}%;`}
 						></div>
 					</div>
 					<div class="flex items-center justify-between text-xs font-semibold text-[#64748B]">
-						<span>Verification progress</span>
+						<span>{modelTask === 'summary' ? 'Summary progress' : 'Verification progress'}</span>
 						<span>{Math.round(verifyProgress)}%</span>
 					</div>
 				</div>
@@ -455,19 +504,22 @@
 				<div class="h-3 w-full animate-pulse rounded-full bg-[#E2E8F0] dark:bg-slate-800"></div>
 				<div class="h-3 w-11/12 animate-pulse rounded-full bg-[#E2E8F0] dark:bg-slate-800"></div>
 				<div class="h-3 w-10/12 animate-pulse rounded-full bg-[#E2E8F0] dark:bg-slate-800"></div>
-				<p class="text-sm font-semibold text-secondary">
-					{verifyStatusMessage + ' ...' || 'Verifying claims…'}
+				<p class="text-secondary text-sm font-semibold">
+					{verifyStatusMessage + ' ...' ||
+						(modelTask === 'summary' ? 'Summarizing video…' : 'Verifying claims…')}
 				</p>
 			</div>
 		{:else if verifyResult}
 			<div
-				class="space-y-3 text-sm leading-relaxed text-[#0F172A] [&_a]:text-primary [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-black/20 [&_blockquote]:pl-3 [&_blockquote]:text-secondary [&_code]:rounded [&_code]:bg-black/5 [&_code]:px-1 [&_code]:py-0.5 [&_h1]:text-2xl [&_h1]:font-semibold [&_h1]:tracking-tight [&_h2]:text-xl [&_h2]:font-semibold [&_h2]:tracking-tight [&_h3]:text-lg [&_h3]:font-semibold [&_h3]:tracking-tight [&_ol]:list-decimal [&_ol]:pl-5 [&_ul]:list-disc [&_ul]:pl-5 dark:text-slate-100 dark:[&_blockquote]:border-white/10 dark:[&_blockquote]:text-slate-300 dark:[&_code]:bg-white/10"
+				class="[&_a]:text-primary [&_blockquote]:text-secondary space-y-3 text-sm leading-relaxed text-[#0F172A] dark:text-slate-100 [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-black/20 [&_blockquote]:pl-3 dark:[&_blockquote]:border-white/10 dark:[&_blockquote]:text-slate-300 [&_code]:rounded [&_code]:bg-black/5 [&_code]:px-1 [&_code]:py-0.5 dark:[&_code]:bg-white/10 [&_h1]:text-2xl [&_h1]:font-semibold [&_h1]:tracking-tight [&_h2]:text-xl [&_h2]:font-semibold [&_h2]:tracking-tight [&_h3]:text-lg [&_h3]:font-semibold [&_h3]:tracking-tight [&_ol]:list-decimal [&_ol]:pl-5 [&_ul]:list-disc [&_ul]:pl-5"
 				use:renderMarkdown={verifyHtml}
 			></div>
 		{:else if verifyError}
 			<p class="text-sm font-semibold text-[#b3362f] dark:text-red-400">{verifyError}</p>
 		{:else}
-			<p class="text-sm text-secondary">No verification response yet.</p>
+			<p class="text-secondary text-sm">
+				{modelTask === 'summary' ? 'No summary response yet.' : 'No verification response yet.'}
+			</p>
 		{/if}
 	</div>
 </dialog>
