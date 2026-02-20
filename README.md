@@ -91,6 +91,7 @@ PROXY_LIST_WRITE_ENABLED="false"
 5. User clicks `Verify` or `Summary`.
 6. The selected API route streams AI output over `text/event-stream`.
 7. UI renders the streamed Markdown safely.
+8. Completed reports are saved in browser `localStorage` and can be reopened on `/history`.
 
 ## 📜 Scripts
 
@@ -139,6 +140,7 @@ PROXY_LIST_WRITE_ENABLED="false"
 3. Click `Get transcript`.
 4. Click `Verify` for fact-check output or `Summary` for condensed output.
 5. Review streamed results in the modal dialog.
+6. Click `History` to revisit previous reports saved in your browser.
 
 ## ⚠️ Important Limitations
 

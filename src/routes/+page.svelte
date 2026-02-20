@@ -1,16 +1,28 @@
 <script lang="ts">
 	import { browser } from '$app/environment';
 	import { enhance } from '$app/forms';
+	import { resolve } from '$app/paths';
+	import ReportDialog from '$lib/components/ReportDialog.svelte';
+	import { addHistoryEntry } from '$lib/history';
 	import { onMount } from 'svelte';
+	import { toast } from 'svelte-sonner';
 	import type { SubmitFunction } from '@sveltejs/kit';
 
 	const { form } = $props<{
 		form?: {
 			error?: string;
 			transcript?: string;
+			sourceUrl?: string;
 			videoId?: string;
+			videoTitle?: string | null;
+			videoDurationSeconds?: number | null;
 		};
 	}>();
+
+	type ReportDialogHandle = {
+		open: () => void;
+		close: () => void;
+	};
 
 	let url = $state('');
 	let isLoading = $state(false);
@@ -19,10 +31,8 @@
 	let verifyError = $state('');
 	let verifyResult = $state('');
 	let modelTask = $state<'verify' | 'summary'>('verify');
-	let dialogRef = $state<HTMLDialogElement | null>(null);
-	let dialogBodyRef = $state<HTMLDivElement | null>(null);
+	let reportDialogRef = $state<ReportDialogHandle | null>(null);
 	let sanitizeMarkdown = $state<((input: string) => string) | null>(null);
-	let autoScrollEnabled = $state(true);
 	let verifyProgress = $state(0);
 	let verifyStatusMessage = $state('');
 	let verifyProgressTimer: ReturnType<typeof setTimeout> | null = null;
@@ -88,26 +98,27 @@
 		localStorage.setItem('theme', isDark ? 'dark' : 'light');
 	});
 
-	const verifyHtml = $derived(
-		verifyResult && sanitizeMarkdown ? sanitizeMarkdown(verifyResult) : ''
-	);
-
-	const renderMarkdown = (node: HTMLElement, html: string) => {
-		node.innerHTML = html;
-		return {
-			update(newHtml: string) {
-				node.innerHTML = newHtml;
-			},
-			destroy() {
-				node.innerHTML = '';
-			}
-		};
-	};
-
 	const transcript = $derived(form?.transcript ?? '');
+	const videoTitle = $derived(form?.videoTitle ?? '');
+	const videoDurationSeconds = $derived(form?.videoDurationSeconds ?? null);
+	const sourceUrl = $derived(form?.sourceUrl ?? url);
 	const error = $derived(form?.error ?? '');
 	const words = $derived(transcript ? transcript.trim().split(/\s+/).filter(Boolean).length : 0);
 	const lines = $derived(transcript ? transcript.split('\n').length : 0);
+	const videoDurationLabel = $derived(
+		videoDurationSeconds === null
+			? ''
+			: (() => {
+					const total = Math.max(0, Math.floor(videoDurationSeconds));
+					const hours = Math.floor(total / 3600);
+					const minutes = Math.floor((total % 3600) / 60);
+					const seconds = total % 60;
+					if (hours > 0) {
+						return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+					}
+					return `${minutes}:${String(seconds).padStart(2, '0')}`;
+				})()
+	);
 
 	const getStatusMessages = () =>
 		modelTask === 'summary' ? summaryStatusMessages : verifyStatusMessages;
@@ -208,6 +219,7 @@
 		if (!transcript) return;
 		await navigator.clipboard.writeText(transcript);
 		copyStatus = 'Copied to clipboard';
+		toast.success('Transcript copied to clipboard');
 		setTimeout(() => {
 			copyStatus = '';
 		}, 2000);
@@ -219,13 +231,14 @@
 		verifyLoading = true;
 		verifyError = '';
 		verifyResult = '';
-		autoScrollEnabled = true;
+		const historyUrl = sourceUrl.trim();
 		startVerifyLoadingEffects();
-		dialogRef?.showModal();
+		reportDialogRef?.open();
 		const genericError =
 			task === 'summary'
 				? 'Unable to summarize the transcript right now.'
 				: 'Unable to verify the transcript right now.';
+		let requestSucceeded = false;
 
 		try {
 			const endpoint = task === 'summary' ? '/api/summary' : '/api/verify';
@@ -239,18 +252,19 @@
 			if (!response.ok) {
 				const errorText = await response.text();
 				verifyError = errorText || genericError;
+				toast.error(verifyError);
 				return;
 			}
 
 			if (!response.body) {
 				verifyError = 'No response stream returned from the model.';
+				toast.error(verifyError);
 				return;
 			}
 
 			const reader = response.body.getReader();
 			const decoder = new TextDecoder();
 			let buffer = '';
-			let scheduledScroll = false;
 
 			while (true) {
 				const { value, done } = await reader.read();
@@ -271,24 +285,33 @@
 								stopVerifyLoadingEffects(true);
 							}
 							verifyResult += text;
-							if (autoScrollEnabled && !scheduledScroll) {
-								scheduledScroll = true;
-								requestAnimationFrame(() => {
-									if (dialogBodyRef) {
-										dialogBodyRef.scrollTop = dialogBodyRef.scrollHeight;
-									}
-									scheduledScroll = false;
-								});
-							}
 						}
 					} catch {
 						// ignore malformed chunks
 					}
 				}
 			}
+			requestSucceeded = true;
 		} catch (error) {
 			verifyError = error instanceof Error ? error.message : genericError;
+			toast.error(verifyError);
 		} finally {
+			if (requestSucceeded && verifyResult.trim()) {
+				const savedEntry = addHistoryEntry({
+					youtubeUrl:
+						historyUrl || (form?.videoId ? `https://www.youtube.com/watch?v=${form.videoId}` : ''),
+					videoTitle: videoTitle || null,
+					videoDurationSeconds,
+					callType: task === 'summary' ? 'summary' : 'factcheck',
+					content: verifyResult
+				});
+				const actionLabel = task === 'summary' ? 'Summary' : 'Fact check';
+				if (savedEntry) {
+					toast.success(`${actionLabel} ready. Saved to history.`);
+				} else {
+					toast.error(`${actionLabel} completed, but it could not be saved to history.`);
+				}
+			}
 			verifyLoading = false;
 			stopVerifyLoadingEffects(true);
 		}
@@ -300,12 +323,6 @@
 
 	const handleSummary = async () => {
 		await handleModelRequest('summary');
-	};
-
-	const handleDialogScroll = () => {
-		if (!dialogBodyRef) return;
-		const { scrollTop, scrollHeight, clientHeight } = dialogBodyRef;
-		autoScrollEnabled = scrollHeight - scrollTop - clientHeight < 24;
 	};
 </script>
 
@@ -320,7 +337,13 @@
 <main
 	class="min-h-screen bg-blue-100 bg-size-[200%_200%] px-6 pt-6 pb-4 text-[#0F172A] sm:px-10 md:pb-10 lg:px-20 dark:bg-slate-950 dark:text-slate-100"
 >
-	<div class="flex items-center justify-end">
+	<div class="flex items-center justify-between gap-3">
+		<a
+			href={resolve('/history', {})}
+			class="rounded-full border border-[#E2E8F0] bg-white px-4 py-2 text-sm font-semibold text-[#0F172A] transition hover:bg-[#E2E8F0] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
+		>
+			History
+		</a>
 		<button
 			class="group relative inline-flex h-9 w-16 items-center rounded-full border border-[#E2E8F0] bg-white px-1 transition hover:shadow-[0_10px_20px_rgba(15,23,42,0.12)] dark:border-slate-700 dark:bg-slate-900 dark:hover:shadow-[0_10px_24px_rgba(15,23,42,0.4)]"
 			type="button"
@@ -330,7 +353,7 @@
 		>
 			<span class="sr-only">Toggle dark mode</span>
 			<span
-				class="bg-primary inline-flex h-6 w-6 items-center justify-center rounded-full text-[0.6rem] font-semibold text-white transition-transform duration-300 dark:text-slate-900"
+				class="inline-flex h-6 w-6 items-center justify-center rounded-full bg-primary text-[0.6rem] font-semibold text-white transition-transform duration-300 dark:text-slate-900"
 				class:translate-x-7={isDark}
 			>
 				{isDark ? 'D' : 'L'}
@@ -339,7 +362,7 @@
 	</div>
 	<section class="mt-4 grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
 		<div class="md:space-y-4">
-			<p class="text-secondary text-[0.7rem] font-semibold tracking-[0.24em] uppercase">
+			<p class="text-[0.7rem] font-semibold tracking-[0.24em] text-secondary uppercase">
 				YouTube Transcript Analyzer
 			</p>
 			<h1
@@ -347,7 +370,7 @@
 			>
 				Extract the transcript, then summarize or fact-check it.
 			</h1>
-			<p class="text-secondary hidden max-w-2xl text-lg leading-relaxed md:flex">
+			<p class="hidden max-w-2xl text-lg leading-relaxed text-secondary md:flex">
 				Paste any YouTube URL to pull captions and turn the transcript into a quick summary or a
 				detailed claim verification report.
 			</p>
@@ -365,18 +388,18 @@
 					required
 					placeholder="https://www.youtube.com/watch?v=VIDEO_ID"
 					bind:value={url}
-					class="rounded-[0.9rem] border border-[#E2E8F0] bg-white px-4 py-3 text-base transition focus:border-[rgb(var(--color-primary)/1)] focus:ring-2 focus:ring-[rgb(var(--color-primary)/0.3)] focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:placeholder:text-slate-500"
+					class="rounded-[0.9rem] border border-[#E2E8F0] bg-white px-4 py-3 text-base transition focus:border-primary focus:ring-2 focus:ring-primary/30 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:placeholder:text-slate-500"
 				/>
 			</label>
 			<div class="grid gap-2">
 				<button
-					class="bg-primary rounded-full px-6 py-3 text-base font-semibold text-white transition hover:-translate-y-0.5 hover:shadow-[0_12px_24px_rgba(29,78,216,0.25)] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0 disabled:hover:shadow-none dark:text-slate-950 dark:hover:shadow-[0_12px_24px_rgba(56,189,248,0.35)]"
+					class="rounded-full bg-primary px-6 py-3 text-base font-semibold text-white transition hover:-translate-y-0.5 hover:shadow-[0_12px_24px_rgba(29,78,216,0.25)] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0 disabled:hover:shadow-none dark:text-slate-950 dark:hover:shadow-[0_12px_24px_rgba(56,189,248,0.35)]"
 					type="submit"
 					disabled={isLoading}
 				>
 					{isLoading ? 'Fetching transcript…' : 'Get transcript'}
 				</button>
-				<p class="text-secondary text-sm">Captions must be enabled for the video.</p>
+				<p class="text-sm text-secondary">Captions must be enabled for the video.</p>
 			</div>
 			{#if error}
 				<p class="text-sm font-semibold text-[#b3362f] dark:text-red-400">{error}</p>
@@ -400,7 +423,7 @@
 
 				<div class="flex items-center gap-2">
 					<button
-						class="bg-primary rounded-full px-5 py-2 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:shadow-[0_10px_20px_rgba(29,78,216,0.25)] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0 disabled:hover:shadow-none dark:text-slate-950 dark:hover:shadow-[0_12px_24px_rgba(56,189,248,0.3)]"
+						class="rounded-full bg-primary px-5 py-2 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:shadow-[0_10px_20px_rgba(29,78,216,0.25)] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0 disabled:hover:shadow-none dark:text-slate-950 dark:hover:shadow-[0_12px_24px_rgba(56,189,248,0.3)]"
 						type="button"
 						onclick={handleVerify}
 						disabled={!transcript || verifyLoading}
@@ -408,7 +431,7 @@
 						{verifyLoading && modelTask === 'verify' ? 'Verifying…' : 'Verify'}
 					</button>
 					<button
-						class="bg-primary/20 text-primary border-primary/30 hover:bg-primary/30 dark:border-primary/35 dark:bg-primary/25 dark:hover:bg-primary/35 rounded-full border px-5 py-2 text-sm font-semibold transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0 dark:text-slate-100"
+						class="rounded-full border border-primary/30 bg-primary/20 px-5 py-2 text-sm font-semibold text-primary transition hover:-translate-y-0.5 hover:bg-primary/30 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0 dark:border-primary/35 dark:bg-primary/25 dark:text-slate-100 dark:hover:bg-primary/35"
 						type="button"
 						onclick={handleSummary}
 						disabled={!transcript || verifyLoading}
@@ -418,7 +441,7 @@
 				</div>
 
 				{#if copyStatus}
-					<span class="text-primary absolute top-2 right-2 animate-bounce text-sm font-semibold"
+					<span class="absolute top-2 right-2 animate-bounce text-sm font-semibold text-primary"
 						>{copyStatus}</span
 					>
 				{/if}
@@ -434,7 +457,7 @@
 					{transcript}
 				</pre>
 			{:else}
-				<div class="text-secondary space-y-3 text-sm leading-relaxed">
+				<div class="space-y-3 text-sm leading-relaxed text-secondary">
 					<p>No transcript yet. Paste a link to start pulling captions.</p>
 					<ul class="list-disc space-y-1 pl-5">
 						<li>Supports watch, short, and embed links.</li>
@@ -445,7 +468,15 @@
 		</div>
 		<div>
 			<h2 class="text-lg font-semibold">Transcript output</h2>
-			<p class="text-secondary mt-1 text-sm">
+			{#if videoTitle || videoDurationLabel}
+				<p class="mt-1 text-sm text-secondary">
+					Video: {videoTitle || 'Untitled'}
+					{#if videoDurationLabel}
+						· Duration: {videoDurationLabel}
+					{/if}
+				</p>
+			{/if}
+			<p class="mt-1 text-sm text-secondary">
 				{#if transcript}
 					{words} words · {lines} lines
 				{:else}
@@ -460,86 +491,13 @@
 	</section>
 </main>
 
-<dialog
-	bind:this={dialogRef}
-	class=" mt-4 h-full w-full max-w-none rounded-3xl border border-[#E2E8F0] bg-white p-0 text-left text-[#0F172A] shadow-[0_30px_60px_rgba(15,23,42,0.2)] backdrop:bg-black/40 md:m-auto md:w-[80vh] dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100 dark:shadow-[0_30px_70px_rgba(0,0,0,0.6)]"
->
-	<div
-		class="flex items-start justify-between gap-4 border-b border-[#E2E8F0] px-6 py-5 dark:border-slate-800"
-	>
-		<div>
-			<p class="text-secondary text-xs font-semibold tracking-[0.24em] uppercase">
-				{modelTask === 'summary' ? 'Summary report' : 'Verification report'}
-			</p>
-			<h3 class="text-xl font-semibold">
-				{modelTask === 'summary' ? 'Video summary' : 'Fact check summary'}
-			</h3>
-		</div>
-		<button
-			class="rounded-full border border-[#E2E8F0] px-3 py-1 text-sm font-semibold text-[#0F172A] transition hover:bg-[#E2E8F0] dark:border-slate-700 dark:text-slate-100 dark:hover:bg-slate-800"
-			type="button"
-			onclick={() => dialogRef?.close()}
-		>
-			Close
-		</button>
-	</div>
-	<div
-		class="max-h-[80vh] overflow-auto px-6 py-5"
-		bind:this={dialogBodyRef}
-		onscroll={handleDialogScroll}
-	>
-		{#if verifyLoading && !verifyResult}
-			<div class="text-secondary space-y-4 text-sm">
-				<div class="space-y-2">
-					<div
-						class="h-2 w-full overflow-hidden rounded-full bg-[#E2E8F0] dark:bg-slate-800"
-						role="progressbar"
-						aria-valuemin="0"
-						aria-valuemax="100"
-						aria-valuenow={Math.round(verifyProgress)}
-					>
-						<div
-							class="bg-primary h-full rounded-full transition-[width] duration-500 ease-out"
-							style={`width: ${verifyProgress}%;`}
-						></div>
-					</div>
-					<div class="flex items-center justify-between text-xs font-semibold text-[#64748B]">
-						<span>{modelTask === 'summary' ? 'Summary progress' : 'Verification progress'}</span>
-						<span>{Math.round(verifyProgress)}%</span>
-					</div>
-				</div>
-				<div class="h-4 w-40 animate-pulse rounded-full bg-[#E2E8F0] dark:bg-slate-800"></div>
-				<div class="h-3 w-full animate-pulse rounded-full bg-[#E2E8F0] dark:bg-slate-800"></div>
-				<div class="h-3 w-11/12 animate-pulse rounded-full bg-[#E2E8F0] dark:bg-slate-800"></div>
-				<div class="h-3 w-10/12 animate-pulse rounded-full bg-[#E2E8F0] dark:bg-slate-800"></div>
-				<p class="text-secondary text-sm font-semibold">
-					{verifyStatusMessage + ' ...' ||
-						(modelTask === 'summary' ? 'Summarizing video…' : 'Verifying claims…')}
-				</p>
-			</div>
-		{:else if verifyResult}
-			<div
-				class="[&_a]:text-primary [&_blockquote]:text-secondary space-y-3 text-sm leading-relaxed text-[#0F172A] dark:text-slate-100 [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-black/20 [&_blockquote]:pl-3 dark:[&_blockquote]:border-white/10 dark:[&_blockquote]:text-slate-300 [&_code]:rounded [&_code]:bg-black/5 [&_code]:px-1 [&_code]:py-0.5 dark:[&_code]:bg-white/10 [&_h1]:text-2xl [&_h1]:font-semibold [&_h1]:tracking-tight [&_h2]:text-xl [&_h2]:font-semibold [&_h2]:tracking-tight [&_h3]:text-lg [&_h3]:font-semibold [&_h3]:tracking-tight [&_ol]:list-decimal [&_ol]:pl-5 [&_ul]:list-disc [&_ul]:pl-5"
-				use:renderMarkdown={verifyHtml}
-			></div>
-		{:else if verifyError}
-			<p class="text-sm font-semibold text-[#b3362f] dark:text-red-400">{verifyError}</p>
-		{:else}
-			<p class="text-secondary text-sm">
-				{modelTask === 'summary' ? 'No summary response yet.' : 'No verification response yet.'}
-			</p>
-		{/if}
-	</div>
-</dialog>
-
-<style>
-	@keyframes gradientShift {
-		0%,
-		100% {
-			background-position: 0% 50%;
-		}
-		50% {
-			background-position: 100% 50%;
-		}
-	}
-</style>
+<ReportDialog
+	bind:this={reportDialogRef}
+	task={modelTask}
+	loading={verifyLoading}
+	progress={verifyProgress}
+	statusMessage={verifyStatusMessage}
+	result={verifyResult}
+	error={verifyError}
+	{sanitizeMarkdown}
+/>

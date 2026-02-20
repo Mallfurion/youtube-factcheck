@@ -64,6 +64,20 @@ type InnertubeData = {
 		playerCaptionsTracklistRenderer?: Record<string, unknown>;
 	};
 	playabilityStatus?: PlayabilityStatusData;
+	videoDetails?: {
+		title?: string;
+		lengthSeconds?: string;
+	};
+	microformat?: {
+		playerMicroformatRenderer?: {
+			title?: {
+				simpleText?: string;
+				runs?: Array<{ text?: string }>;
+			};
+			lengthSeconds?: string;
+			approxDurationMs?: string;
+		};
+	};
 };
 
 export type FetchedTranscriptSnippet = {
@@ -217,19 +231,27 @@ export class TranscriptList {
 	private _translationLanguages: TranslationLanguage[];
 
 	videoId: string;
+	videoTitle: string | null;
+	videoDurationSeconds: number | null;
 
 	constructor({
 		videoId,
+		videoTitle,
+		videoDurationSeconds,
 		manuallyCreatedTranscripts,
 		generatedTranscripts,
 		translationLanguages
 	}: {
 		videoId: string;
+		videoTitle?: string | null;
+		videoDurationSeconds?: number | null;
 		manuallyCreatedTranscripts: Record<string, Transcript>;
 		generatedTranscripts: Record<string, Transcript>;
 		translationLanguages: TranslationLanguage[];
 	}) {
 		this.videoId = videoId;
+		this.videoTitle = videoTitle ?? null;
+		this.videoDurationSeconds = videoDurationSeconds ?? null;
 		this._manuallyCreatedTranscripts = manuallyCreatedTranscripts;
 		this._generatedTranscripts = generatedTranscripts;
 		this._translationLanguages = translationLanguages;
@@ -238,7 +260,9 @@ export class TranscriptList {
 	static build(
 		httpClient: HttpClient,
 		videoId: string,
-		captionsJson: Record<string, unknown>
+		captionsJson: Record<string, unknown>,
+		videoTitle: string | null = null,
+		videoDurationSeconds: number | null = null
 	): TranscriptList {
 		const translationLanguagesValue = captionsJson.translationLanguages;
 		const translationLanguagesRaw = Array.isArray(translationLanguagesValue)
@@ -283,6 +307,8 @@ export class TranscriptList {
 
 		return new TranscriptList({
 			videoId,
+			videoTitle,
+			videoDurationSeconds,
 			manuallyCreatedTranscripts,
 			generatedTranscripts,
 			translationLanguages
@@ -358,19 +384,34 @@ export class TranscriptListFetcher {
 	}
 
 	async fetch(videoId: string): Promise<TranscriptList> {
-		const captionsJson = await this._fetchCaptionsJson(videoId);
-		return TranscriptList.build(this._httpClient, videoId, captionsJson);
+		const { captionsJson, videoTitle, videoDurationSeconds } =
+			await this._fetchCaptionsJson(videoId);
+		return TranscriptList.build(
+			this._httpClient,
+			videoId,
+			captionsJson,
+			videoTitle,
+			videoDurationSeconds
+		);
 	}
 
 	private async _fetchCaptionsJson(
 		videoId: string,
 		tryNumber = 0
-	): Promise<Record<string, unknown>> {
+	): Promise<{
+		captionsJson: Record<string, unknown>;
+		videoTitle: string | null;
+		videoDurationSeconds: number | null;
+	}> {
 		try {
 			const html = await this._fetchVideoHtml(videoId);
 			const apiKey = this._extractInnertubeApiKey(html, videoId);
 			const innertubeData = await this._fetchInnertubeData(videoId, apiKey);
-			return this._extractCaptionsJson(innertubeData, videoId);
+			return {
+				captionsJson: this._extractCaptionsJson(innertubeData, videoId),
+				videoTitle: this._extractVideoTitle(innertubeData),
+				videoDurationSeconds: this._extractVideoDurationSeconds(innertubeData)
+			};
 		} catch (error) {
 			if (error instanceof RequestBlocked) {
 				const retries = this._proxyConfig ? this._proxyConfig.retriesWhenBlocked : 0;
@@ -408,6 +449,48 @@ export class TranscriptListFetcher {
 		}
 
 		return captionsJson;
+	}
+
+	private _extractVideoTitle(innertubeData: Record<string, unknown>): string | null {
+		const typedInnertube = innertubeData as InnertubeData;
+
+		const fromVideoDetails = typedInnertube.videoDetails?.title?.trim();
+		if (fromVideoDetails) return fromVideoDetails;
+
+		const microformatTitle = typedInnertube.microformat?.playerMicroformatRenderer?.title;
+		const fromSimpleText = microformatTitle?.simpleText?.trim();
+		if (fromSimpleText) return fromSimpleText;
+
+		const fromRuns = microformatTitle?.runs
+			?.map((run) => run.text ?? '')
+			.join('')
+			.trim();
+		return fromRuns || null;
+	}
+
+	private _extractVideoDurationSeconds(innertubeData: Record<string, unknown>): number | null {
+		const typedInnertube = innertubeData as InnertubeData;
+
+		const parseSeconds = (value: string | undefined): number | null => {
+			if (!value) return null;
+			const parsed = Number.parseInt(value, 10);
+			return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+		};
+
+		const parseApproxMs = (value: string | undefined): number | null => {
+			if (!value) return null;
+			const parsed = Number.parseInt(value, 10);
+			return Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed / 1000) : null;
+		};
+
+		const fromVideoDetails = parseSeconds(typedInnertube.videoDetails?.lengthSeconds);
+		if (fromVideoDetails !== null) return fromVideoDetails;
+
+		const microformat = typedInnertube.microformat?.playerMicroformatRenderer;
+		const fromMicroformatSeconds = parseSeconds(microformat?.lengthSeconds);
+		if (fromMicroformatSeconds !== null) return fromMicroformatSeconds;
+
+		return parseApproxMs(microformat?.approxDurationMs);
 	}
 
 	private _assertPlayability(

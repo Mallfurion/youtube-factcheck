@@ -71,7 +71,10 @@ export const actions: Actions = {
 
 		try {
 			const api = new YouTubeTranscriptApi();
-			const transcriptData = await api.fetch(videoId, { languages: ['en'] });
+			const transcriptList = await api.list(videoId);
+			const transcriptData = await transcriptList.findTranscript(['en']).fetch();
+			const videoTitle = transcriptList.videoTitle;
+			const videoDurationSeconds = transcriptList.videoDurationSeconds;
 			const transcript = transcriptData
 				.toRawData()
 				.map((item: FetchedTranscriptSnippet) => decodeHtml(item.text).replace(/\\n/g, ' '))
@@ -86,7 +89,9 @@ export const actions: Actions = {
 			return {
 				transcript,
 				sourceUrl: url,
-				videoId
+				videoId,
+				videoTitle,
+				videoDurationSeconds
 			};
 		} catch (error) {
 			if (env.TRANSCRIPT_DEBUG === 'true') {
